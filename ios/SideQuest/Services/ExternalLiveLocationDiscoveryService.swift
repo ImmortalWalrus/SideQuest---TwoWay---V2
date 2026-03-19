@@ -2657,7 +2657,7 @@ actor ExternalLiveLocationDiscoveryService {
 
         let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
         guard let regex = try? NSRegularExpression(
-            pattern: #"aria-label="Rated ([0-9.]+) out of 5[,"]|<span class="(?:UIHjI|MW4etd|Aq14fc|jANrlb|yi40Hd|e4rVHe)[^"]*"[^>]*>([0-9.]+)</span>|aria-label="([0-9.]+) stars? ?"|<span aria-hidden="true">([0-9.]+)</span>\s*<span class="(?:ceNzKf|UY7F9|EBe2gf)[^"]*"[^>]*|class="[^"]*(?:rating|stars)[^"]*"[^>]*>\s*([0-9.]+)"#,
+            pattern: #"aria-label="Rated ([0-9.]+) out of 5[,"]|<span class="(?:UIHjI|MW4etd|Aq14fc|jANrlb|yi40Hd|e4rVHe|Fam1ne|fzTgPe|Y0A0hc|oqSTJd|KsR1A)[^"]*"[^>]*>([0-9.]+)</span>|aria-label="([0-9.]+) stars? ?"|<span aria-hidden="true">([0-9.]+)</span>\s*<span class="(?:ceNzKf|UY7F9|EBe2gf|F9iS2e|LJEGhe)[^"]*"[^>]*|class="[^"]*(?:rating|stars|review-score)[^"]*"[^>]*>\s*([0-9.]+)|data-rating="([0-9.]+)"|itemprop="ratingValue"[^>]*content="([0-9.]+)""#,
             options: []
         ) else {
             return nil
@@ -2666,7 +2666,7 @@ actor ExternalLiveLocationDiscoveryService {
         var bestSignal: (signal: GoogleLocalReviewSignal, score: Int, reviewCount: Int)?
 
         for match in regex.matches(in: html, options: [], range: nsRange) {
-            let ratingMatchRange = [1, 2, 3, 4, 5]
+            let ratingMatchRange = (1...7)
                 .lazy
                 .map { match.range(at: $0) }
                 .first(where: { $0.location != NSNotFound })
@@ -2686,8 +2686,10 @@ actor ExternalLiveLocationDiscoveryService {
                 decodedHTMLText(firstCapture(pattern: #"([0-9][0-9,\.KkMm]*) Google reviews"#, in: window)),
                 decodedHTMLText(firstCapture(pattern: #"aria-label="([0-9][0-9,\.KkMm]*) reviews"#, in: window)),
                 decodedHTMLText(firstCapture(pattern: #"\(([0-9][0-9,\.KkMm]*)\)"#, in: window)),
-                decodedHTMLText(firstCapture(pattern: #"class="(?:EBe2gf|UY7F9|RDApEe|jANrlb)[^"]*"[^>]*>([0-9][0-9,\.KkMm]*)<"#, in: window)),
-                decodedHTMLText(firstCapture(pattern: #">([0-9][0-9,\.KkMm]*) review"#, in: window))
+                decodedHTMLText(firstCapture(pattern: #"class="(?:EBe2gf|UY7F9|RDApEe|jANrlb|F9iS2e|LJEGhe)[^"]*"[^>]*>([0-9][0-9,\.KkMm]*)<"#, in: window)),
+                decodedHTMLText(firstCapture(pattern: #">([0-9][0-9,\.KkMm]*) review"#, in: window)),
+                decodedHTMLText(firstCapture(pattern: #"itemprop="reviewCount"[^>]*content="([0-9][0-9,\.KkMm]*)""#, in: window)),
+                decodedHTMLText(firstCapture(pattern: #"data-review-count="([0-9][0-9,\.KkMm]*)""#, in: window))
             ]
             guard let rating = Double(ratingText) else {
                 continue
@@ -2695,13 +2697,15 @@ actor ExternalLiveLocationDiscoveryService {
             let reviewCount = countCandidates.lazy.compactMap(parseGoogleReviewCount).first
 
             let titlePatterns = [
-                #"<h1[^>]+class="[^"]*(?:DUwDvf|lfPIob|fontHeadlineLarge)[^"]*"[^>]*>(.*?)</h1>"#,
+                #"<h1[^>]+class="[^"]*(?:DUwDvf|lfPIob|fontHeadlineLarge|LZF9ie)[^"]*"[^>]*>(.*?)</h1>"#,
                 #"<title>(.*?) - Google (?:Maps|Search)</title>"#,
-                #"<span class="(?:OSrXXb|SPZz6b|rHQ3hc)">(.*?)</span>"#,
+                #"<span class="(?:OSrXXb|SPZz6b|rHQ3hc|yoA8e)">(.*?)</span>"#,
                 #"<div class="(?:dbg0pd|rgnuSb|lMbq3e)">(.*?)</div>"#,
                 #"<div class="(?:qBF1Pd|NhRr3b)[^"]*"[^>]*>(.*?)</div>"#,
-                #"<h2[^>]+class="[^"]*qrShPb[^"]*"[^>]*>(.*?)</h2>"#,
-                #"data-attrid="title"[^>]*>(.*?)<"#
+                #"<h2[^>]+class="[^"]*(?:qrShPb|kno-ecr-pt)[^"]*"[^>]*>(.*?)</h2>"#,
+                #"data-attrid="title"[^>]*>(.*?)<"#,
+                #"<span data-attrid="title"[^>]*>(.*?)</span>"#,
+                #"aria-label="[^"]*" data-pid="[^"]*"[^>]*>\s*<span[^>]*>(.*?)</span>"#
             ]
             let title = titlePatterns
                 .lazy
@@ -2983,16 +2987,44 @@ actor ExternalLiveLocationDiscoveryService {
     ) -> String {
         let candidates = googleMapSearchStrings(in: array, maxDepth: 3)
         for candidate in candidates {
-            if candidate.contains("/maps/preview/place/") {
-                return googleMapSearchAbsoluteURL(candidate) ?? fallbackReviewURL
+            if candidate.contains("/maps/place/") && !candidate.contains("/maps/preview/") {
+                if let abs = googleMapSearchAbsoluteURL(candidate) {
+                    return abs
+                }
             }
         }
         for candidate in candidates {
-            if candidate.contains("/search?"), candidate.contains("tbm=map") {
-                return googleMapSearchAbsoluteURL(candidate) ?? fallbackReviewURL
+            if candidate.hasPrefix("https://maps.google.com") || candidate.hasPrefix("https://www.google.com/maps") {
+                let lower = candidate.lowercased()
+                if !lower.contains("tbm=map") && !lower.contains("/preview/") {
+                    if let abs = googleMapSearchAbsoluteURL(candidate) {
+                        return abs
+                    }
+                }
             }
         }
-        return fallbackReviewURL
+        let sanitized = sanitizedUserFacingReviewURL(fallbackReviewURL)
+        return sanitized
+    }
+
+    private nonisolated static func sanitizedUserFacingReviewURL(_ urlString: String) -> String {
+        let lower = urlString.lowercased()
+        if lower.contains("tbm=map") || lower.contains("/maps/preview/") || (lower.contains("google.com/search?") && !lower.contains("reviews")) {
+            if let url = URL(string: urlString),
+               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let queryItem = components.queryItems?.first(where: { $0.name == "q" }),
+               let query = queryItem.value {
+                var mapComponents = URLComponents(string: "https://www.google.com/maps/search/")
+                mapComponents?.queryItems = [
+                    URLQueryItem(name: "api", value: "1"),
+                    URLQueryItem(name: "query", value: query)
+                ]
+                if let mapURL = mapComponents?.url {
+                    return mapURL.absoluteString
+                }
+            }
+        }
+        return urlString
     }
 
     private nonisolated static func googleMapSearchAbsoluteURL(_ rawValue: String) -> String? {
@@ -3106,10 +3138,11 @@ actor ExternalLiveLocationDiscoveryService {
         if let reviewCount = signal.reviewCount {
             enriched.venuePopularityCount = reviewCount
         }
+        let safeURL = sanitizedUserFacingReviewURL(signal.reviewURL)
         var reviewPayload: [String: Any] = [
             "google_places_rating": signal.rating,
-            "google_places_url": signal.reviewURL,
-            "google_maps_uri": signal.reviewURL,
+            "google_places_url": safeURL,
+            "google_maps_uri": safeURL,
             "google_review_signal_source": "scraped_google_maps"
         ]
         if let reviewCount = signal.reviewCount {
@@ -3131,10 +3164,11 @@ actor ExternalLiveLocationDiscoveryService {
         if let reviewCount = signal.reviewCount {
             enriched.venuePopularityCount = reviewCount
         }
+        let safeURL = sanitizedUserFacingReviewURL(signal.reviewURL)
         var reviewPayload: [String: Any] = [
             "google_places_rating": signal.rating,
-            "google_places_url": signal.reviewURL,
-            "google_maps_uri": signal.reviewURL,
+            "google_places_url": safeURL,
+            "google_maps_uri": safeURL,
             "google_review_signal_source": "scraped_google_maps"
         ]
         if let reviewCount = signal.reviewCount {

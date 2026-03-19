@@ -1745,6 +1745,7 @@ private extension ExternalEvent {
 
         if let directURL = directCandidates
             .compactMap(normalizedWebURL(from:))
+            .filter({ !isNonUserFacingGoogleURL($0) })
             .compactMap(URL.init(string:))
             .first
         {
@@ -2703,6 +2704,15 @@ private extension ExternalEvent {
         }
 
         return nil
+    }
+
+    private func isNonUserFacingGoogleURL(_ urlString: String) -> Bool {
+        let lower = urlString.lowercased()
+        if lower.contains("tbm=map") { return true }
+        if lower.contains("/maps/preview/place/") { return true }
+        if lower.contains("/maps/preview/") && !lower.contains("/maps/place/") { return true }
+        if lower.contains("google.com/search?") && !lower.contains("reviews") { return true }
+        return false
     }
 
     private func normalizedWebURL(from rawValue: String?) -> String? {
