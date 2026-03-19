@@ -43,6 +43,8 @@ const NIGHTLIFE_BLOCK_SIGNALS = [
 ];
 
 const MIN_REVIEW_COUNT_FOR_JSON_TRUST = 5;
+const MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST = 10;
+const STRONG_REVIEW_COUNT_THRESHOLD = 50;
 
 export async function enrichEventsWithReviews(
   events: EventResult[],
@@ -115,6 +117,9 @@ export async function enrichEventsWithReviews(
 
           if (!sanitizedRating) {
             poisonedCount++;
+            console.log(
+              `[reviews] Poisoned: ${rep?.venueName || key} => rating=${signal.rating}, count=${signal.reviewCount}`
+            );
             await upsertVenueReview(supabase, {
               venue_key: key,
               venue_name: rep?.venueName || rep?.title || "",
@@ -133,6 +138,9 @@ export async function enrichEventsWithReviews(
             continue;
           }
 
+          console.log(
+            `[reviews] Hit: ${rep?.venueName || key} => ${sanitizedRating} (${sanitizedCount ?? 0} reviews)`
+          );
           freshSignals.set(key, signal);
           hitCount++;
 
@@ -355,7 +363,7 @@ async function scrapeGoogleReviewSignal(
           }
         }
 
-        if (htmlSignalResult && htmlSignalResult.reviewCount && htmlSignalResult.reviewCount >= MIN_REVIEW_COUNT_FOR_JSON_TRUST) {
+        if (htmlSignalResult && htmlSignalResult.reviewCount && htmlSignalResult.reviewCount >= STRONG_REVIEW_COUNT_THRESHOLD) {
           break;
         }
       } catch {
@@ -363,7 +371,7 @@ async function scrapeGoogleReviewSignal(
       }
     }
 
-    if (htmlSignalResult && htmlSignalResult.reviewCount && htmlSignalResult.reviewCount >= MIN_REVIEW_COUNT_FOR_JSON_TRUST) {
+    if (htmlSignalResult && htmlSignalResult.reviewCount && htmlSignalResult.reviewCount >= STRONG_REVIEW_COUNT_THRESHOLD) {
       break;
     }
   }
@@ -377,9 +385,14 @@ function reconcileSignals(
 ): ReviewSignal | null {
   if (!htmlSignal && !mapSignal) return null;
 
-  if (htmlSignal && !mapSignal) return htmlSignal;
+  if (htmlSignal && !mapSignal) {
+    if ((htmlSignal.reviewCount ?? 0) >= MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST) {
+      return htmlSignal;
+    }
+    return null;
+  }
   if (mapSignal && !htmlSignal) {
-    if (mapSignal.reviewCount && mapSignal.reviewCount >= MIN_REVIEW_COUNT_FOR_JSON_TRUST) {
+    if (mapSignal.reviewCount && mapSignal.reviewCount >= MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST) {
       return mapSignal;
     }
     return null;
@@ -388,29 +401,44 @@ function reconcileSignals(
   const html = htmlSignal!;
   const map = mapSignal!;
 
+  const htmlCount = html.reviewCount ?? 0;
+  const mapCount = map.reviewCount ?? 0;
+
   if (Math.abs(html.rating - map.rating) <= 0.3) {
+    const bestCount = Math.max(htmlCount, mapCount);
+    if (bestCount < MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST) return null;
     const bestURL = html.url.includes("/maps/place/") ? html.url
       : map.url.includes("/maps/place/") ? map.url
       : html.url;
+    const preferredRating = mapCount >= htmlCount ? map.rating : html.rating;
     return {
-      rating: html.rating,
-      reviewCount: Math.max(html.reviewCount ?? 0, map.reviewCount ?? 0) || null,
+      rating: preferredRating,
+      reviewCount: bestCount || null,
       url: bestURL,
       source: "scraped_google_maps",
     };
   }
 
-  const htmlHasCount = (html.reviewCount ?? 0) >= MIN_REVIEW_COUNT_FOR_JSON_TRUST;
-  const mapHasCount = (map.reviewCount ?? 0) >= MIN_REVIEW_COUNT_FOR_JSON_TRUST;
+  const htmlStrong = htmlCount >= STRONG_REVIEW_COUNT_THRESHOLD;
+  const mapStrong = mapCount >= STRONG_REVIEW_COUNT_THRESHOLD;
+
+  if (htmlStrong && mapStrong) {
+    return htmlCount >= mapCount ? html : map;
+  }
+  if (htmlStrong && !mapStrong) return html;
+  if (mapStrong && !htmlStrong) return map;
+
+  const htmlHasCount = htmlCount >= MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST;
+  const mapHasCount = mapCount >= MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST;
 
   if (htmlHasCount && !mapHasCount) return html;
   if (mapHasCount && !htmlHasCount) return map;
 
   if (htmlHasCount && mapHasCount) {
-    return (html.reviewCount ?? 0) >= (map.reviewCount ?? 0) ? html : map;
+    return htmlCount >= mapCount ? html : map;
   }
 
-  return html;
+  return null;
 }
 
 function parseGoogleMapSearchSignal(
@@ -533,10 +561,7 @@ function extractMapSearchRatingWithCount(
   ) {
     const rating = array[7];
     const reviewCount = findNearbyReviewCount(array, 7);
-    if (reviewCount !== null && reviewCount >= MIN_REVIEW_COUNT_FOR_JSON_TRUST) {
-      return { rating, reviewCount };
-    }
-    if (hasRatingTextNearby(array)) {
+    if (reviewCount !== null && reviewCount >= MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST) {
       return { rating, reviewCount };
     }
     return null;
@@ -553,7 +578,7 @@ function extractMapSearchRatingWithCount(
   ) {
     const rating = array[0];
     const count = array[2] as number;
-    if (count >= MIN_REVIEW_COUNT_FOR_JSON_TRUST) {
+    if (count >= MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST) {
       return { rating, reviewCount: count };
     }
     return null;
@@ -568,7 +593,7 @@ function extractMapSearchRatingWithCount(
     array[1] <= 5.0 &&
     typeof array[3] === "number" &&
     Number.isInteger(array[3]) &&
-    (array[3] as number) >= MIN_REVIEW_COUNT_FOR_JSON_TRUST
+    (array[3] as number) >= MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST
   ) {
     return { rating: array[1], reviewCount: array[3] as number };
   }
@@ -581,7 +606,7 @@ function extractMapSearchRatingWithCount(
     array[1] <= 5.0 &&
     typeof array[2] === "number" &&
     Number.isInteger(array[2]) &&
-    (array[2] as number) >= MIN_REVIEW_COUNT_FOR_JSON_TRUST
+    (array[2] as number) >= MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST
   ) {
     return { rating: array[1], reviewCount: array[2] as number };
   }
@@ -802,7 +827,12 @@ function parseGoogleHTMLReviewSignal(
       source: "scraped_google_maps",
     };
 
-    const countBonus = reviewCount && reviewCount >= MIN_REVIEW_COUNT_FOR_JSON_TRUST ? 2 : 0;
+    const countBonus = reviewCount
+      ? reviewCount >= STRONG_REVIEW_COUNT_THRESHOLD ? 10
+      : reviewCount >= MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST ? 6
+      : reviewCount >= MIN_REVIEW_COUNT_FOR_JSON_TRUST ? 2
+      : 0
+      : 0;
     const effectiveScore = titleScore + countBonus;
     const reviewCountVal = reviewCount ?? 0;
     if (
@@ -814,7 +844,9 @@ function parseGoogleHTMLReviewSignal(
     }
   }
 
-  return bestSignal?.signal ?? null;
+  if (!bestSignal) return null;
+  if ((bestSignal.reviewCount) < MIN_REVIEW_COUNT_FOR_JSON_TRUST) return null;
+  return bestSignal.signal;
 }
 
 function parseGoogleReviewCount(raw: string): number | null {
