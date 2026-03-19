@@ -61,7 +61,7 @@ RPC functions:
 Node/TypeScript process that:
 1. Polls for pending jobs from `refresh_jobs`
 2. Fetches events from Ticketmaster, Eventbrite (extensible)
-3. Enriches with Google Places API reviews
+3. Enriches with Google Maps HTML review scraping
 4. Deduplicates and normalizes
 5. Writes snapshot to `external_event_snapshots`
 6. Records source health and coverage metrics
@@ -86,7 +86,7 @@ npm start              # Production
 
 **What moved to backend:**
 - Event fetching from Ticketmaster, Eventbrite, Google Events
-- Google Places API review enrichment
+- Google Maps HTML review scraping/enrichment
 - Deduplication and normalization
 - Snapshot assembly and storage
 - Scheduling and refresh orchestration
