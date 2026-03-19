@@ -18,6 +18,7 @@ import {
   fetchTicketmaster,
   fetchEventbrite,
   enrichEventsWithReviews,
+  enrichEventsWithNightlife,
   type AdapterResult,
   type EventResult,
 } from "./adapters";
@@ -180,6 +181,21 @@ async function processJob(
     `[worker] ${metro.display_name}: ${allEvents.length} raw events from ${adapterResults.length} sources`
   );
 
+  // Nightlife enrichment: Discotech / Clubbable / HWood scraping
+  const nightlifeResult = await enrichEventsWithNightlife(
+    allEvents,
+    metro,
+    config
+  );
+  allEvents = nightlifeResult.events;
+  notes.push(...nightlifeResult.notes);
+  if (nightlifeResult.venueCount > 0) {
+    console.log(
+      `[worker] ${metro.display_name}: ${nightlifeResult.venueCount} nightlife venues discovered`
+    );
+  }
+
+  // Review enrichment: Google Maps HTML scraping (primary), Places API (fallback)
   const reviewResult = await enrichEventsWithReviews(
     allEvents,
     config,
@@ -190,6 +206,18 @@ async function processJob(
   for (const [source, events] of eventsBySource) {
     const enrichedForSource = allEvents.filter((e) => e.source === source);
     eventsBySource.set(source, enrichedForSource);
+  }
+
+  // Add nightlife venue-night events to source map
+  const nightlifeEvents = allEvents.filter(
+    (e) => e.source === "discotech" || e.source === "clubbable" || e.source === "hwood"
+  );
+  if (nightlifeEvents.length > 0) {
+    for (const event of nightlifeEvents) {
+      const existing = eventsBySource.get(event.source) || [];
+      existing.push(event);
+      eventsBySource.set(event.source, existing);
+    }
   }
 
   const snapshot = buildSnapshot(metro, job.intent, eventsBySource, notes);
@@ -295,7 +323,7 @@ async function processJob(
     sports_count: sportsCount,
     concert_count: concertCount,
     community_count: communityCount,
-    poisoned_review_count: 0,
+    poisoned_review_count: reviewResult.poisonedCount ?? 0,
     stale_reason:
       snapshot.mergedEvents.length === 0 ? "No events returned" : undefined,
     degraded_reason:
@@ -317,6 +345,8 @@ async function processJob(
       review_hit_count: reviewResult.hitCount,
       review_miss_count: reviewResult.missCount,
       review_error_count: reviewResult.errorCount,
+      review_poisoned_count: reviewResult.poisonedCount ?? 0,
+      nightlife_venue_count: nightlifeResult.venueCount,
       source_results: adapterResults.map((r) => ({
         source: r.source,
         event_count: r.events.length,
@@ -332,7 +362,9 @@ async function processJob(
     `[worker] ${metro.display_name}/${job.intent}: ` +
       `${snapshot.mergedEvents.length} events, ` +
       `${uniqueVenues} venues, ` +
-      `review coverage ${(reviewCoveragePct * 100).toFixed(1)}%, ` +
+      `review coverage ${(reviewCoveragePct * 100).toFixed(1)}% ` +
+      `(${reviewResult.poisonedCount ?? 0} poisoned), ` +
+      `${nightlifeResult.venueCount} nightlife venues, ` +
       `${durationMs}ms`
   );
 }
