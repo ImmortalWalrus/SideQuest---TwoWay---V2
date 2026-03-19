@@ -1,0 +1,9 @@
+{
+  "apps": [
+    {
+      "name": "SideQuest",
+      "path": "ios",
+      "framework": "swift"
+    }
+  ]
+}
