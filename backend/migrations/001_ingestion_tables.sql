@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS venue_review_cache (
     yelp_rating         DOUBLE PRECISION,
     yelp_review_count   INTEGER,
     yelp_url            TEXT,
-    review_source       TEXT NOT NULL DEFAULT 'google_places_api',
+    review_source       TEXT NOT NULL DEFAULT 'scraped_google_maps',
     is_poisoned         BOOLEAN NOT NULL DEFAULT FALSE,
     poison_reason       TEXT,
     fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),

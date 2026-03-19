@@ -662,7 +662,6 @@ actor ExternalVenueDiscoveryService {
         cacheTTL: TimeInterval = 90 * 60,
         venueAdapters: [any ExternalVenueSourceAdapter] = [
             NightlifeAggregatorVenueAdapter(),
-            GooglePlacesVenueAdapter(),
             AppleMapsVenueAdapter()
         ],
         nightlifeAdapters: [any NightlifeVenueEnrichmentAdapter] = [

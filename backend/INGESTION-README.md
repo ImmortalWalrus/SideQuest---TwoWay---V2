@@ -116,7 +116,7 @@ AFTER:  iOS reads Supabase snapshot → displays (server already scraped/enriche
 | `WORKER_ID` | No | Worker identity for job claiming |
 | `TICKETMASTER_API_KEY` | Yes | Ticketmaster Discovery API key |
 | `EVENTBRITE_PRIVATE_TOKEN` | No | Eventbrite OAuth token |
-| `GOOGLE_PLACES_API_KEY` | Yes | Google Places API key for reviews |
+| _(no API key needed)_ | — | Reviews use Google Maps HTML scraping |
 | `APIFY_API_TOKEN` | No | Apify token for Google Events |
 | `YELP_API_KEY` | No | Yelp Fusion API key |
 | `POLL_INTERVAL_MS` | No | Job poll interval (default: 10000) |

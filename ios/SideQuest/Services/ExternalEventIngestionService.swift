@@ -17,8 +17,6 @@ nonisolated struct ExternalEventServiceConfiguration: Sendable {
     var runsignupBaseURL: URL = URL(string: "https://api.runsignup.com")!
     var sportsScheduleAPIKey: String?
     var sportsScheduleBaseURL: URL = URL(string: "https://www.thesportsdb.com/api/v1/json/123")!
-    var googlePlacesAPIKey: String?
-    var googlePlacesBaseURL: URL = URL(string: "https://places.googleapis.com/v1")!
     var yelpAPIKey: String?
     var yelpBaseURL: URL = URL(string: "https://api.yelp.com/v3")!
     var apifyAPIToken: String?
@@ -44,8 +42,6 @@ nonisolated struct ExternalEventServiceConfiguration: Sendable {
             runsignupBaseURL: URL(string: env["RUNSIGNUP_BASE_URL"] ?? runtimeSecrets["RUNSIGNUP_BASE_URL"] ?? "https://api.runsignup.com")!,
             sportsScheduleAPIKey: env["SPORTS_SCHEDULE_API_KEY"] ?? runtimeSecrets["SPORTS_SCHEDULE_API_KEY"] ?? env["SPORTRADAR_API_KEY"] ?? runtimeSecrets["SPORTRADAR_API_KEY"],
             sportsScheduleBaseURL: URL(string: env["SPORTS_SCHEDULE_BASE_URL"] ?? runtimeSecrets["SPORTS_SCHEDULE_BASE_URL"] ?? env["SPORTRADAR_BASE_URL"] ?? runtimeSecrets["SPORTRADAR_BASE_URL"] ?? "https://www.thesportsdb.com/api/v1/json/123")!,
-            googlePlacesAPIKey: env["GOOGLE_PLACES_API_KEY"] ?? runtimeSecrets["GOOGLE_PLACES_API_KEY"],
-            googlePlacesBaseURL: URL(string: env["GOOGLE_PLACES_BASE_URL"] ?? runtimeSecrets["GOOGLE_PLACES_BASE_URL"] ?? "https://places.googleapis.com/v1")!,
             yelpAPIKey: env["YELP_API_KEY"] ?? runtimeSecrets["YELP_API_KEY"],
             yelpBaseURL: URL(string: env["YELP_BASE_URL"] ?? runtimeSecrets["YELP_BASE_URL"] ?? "https://api.yelp.com/v3")!,
             apifyAPIToken: env["APIFY_API_TOKEN"] ?? runtimeSecrets["APIFY_API_TOKEN"],
@@ -72,8 +68,6 @@ nonisolated struct ExternalEventServiceConfiguration: Sendable {
             runsignupBaseURL: environment.runsignupBaseURL,
             sportsScheduleAPIKey: environment.sportsScheduleAPIKey,
             sportsScheduleBaseURL: environment.sportsScheduleBaseURL,
-            googlePlacesAPIKey: environment.googlePlacesAPIKey,
-            googlePlacesBaseURL: environment.googlePlacesBaseURL,
             yelpAPIKey: environment.yelpAPIKey,
             yelpBaseURL: environment.yelpBaseURL,
             apifyAPIToken: environment.apifyAPIToken ?? "apify_api_yhX54E2qHYteUQxN3s8iEpsayM2A4W2sX0xF",

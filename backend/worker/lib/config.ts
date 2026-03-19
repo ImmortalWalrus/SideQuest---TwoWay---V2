@@ -4,7 +4,6 @@ export interface WorkerConfig {
   workerId: string;
   ticketmasterApiKey?: string;
   eventbriteToken?: string;
-  googlePlacesApiKey?: string;
   apifyApiToken?: string;
   yelpApiKey?: string;
   pollIntervalMs: number;
@@ -28,7 +27,6 @@ export function loadConfig(): WorkerConfig {
     workerId: env.WORKER_ID || `worker-${process.pid}-${Date.now()}`,
     ticketmasterApiKey: env.TICKETMASTER_API_KEY,
     eventbriteToken: env.EVENTBRITE_PRIVATE_TOKEN,
-    googlePlacesApiKey: env.GOOGLE_PLACES_API_KEY,
     apifyApiToken: env.APIFY_API_TOKEN,
     yelpApiKey: env.YELP_API_KEY,
     pollIntervalMs: parseInt(env.POLL_INTERVAL_MS || "10000", 10),

@@ -195,7 +195,7 @@ async function processJob(
     );
   }
 
-  // Review enrichment: Google Maps HTML scraping (primary), Places API (fallback)
+  // Review enrichment: Google Maps HTML scraping (scraping-only, no API keys)
   const reviewResult = await enrichEventsWithReviews(
     allEvents,
     config,

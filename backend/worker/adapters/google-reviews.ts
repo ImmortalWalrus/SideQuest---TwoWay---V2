@@ -17,7 +17,7 @@ interface ReviewSignal {
   rating: number;
   reviewCount: number | null;
   url: string;
-  source: "scraped_google_maps" | "google_places_api";
+  source: "scraped_google_maps";
 }
 
 interface ReviewLookup {
@@ -290,20 +290,9 @@ function buildGoogleReviewURLs(query: string): string[] {
 
 async function fetchReviewSignal(
   lookup: ReviewLookup,
-  config: WorkerConfig
+  _config: WorkerConfig
 ): Promise<ReviewSignal | null> {
-  const scrapedSignal = await scrapeGoogleReviewSignal(lookup);
-  if (scrapedSignal) return scrapedSignal;
-
-  if (config.googlePlacesApiKey) {
-    const apiSignal = await fetchGooglePlacesReviewFallback(
-      lookup,
-      config.googlePlacesApiKey
-    );
-    if (apiSignal) return apiSignal;
-  }
-
-  return null;
+  return scrapeGoogleReviewSignal(lookup);
 }
 
 async function scrapeGoogleReviewSignal(
@@ -1078,69 +1067,4 @@ function googleReviewURLContext(
   return { primaryName, context: normalizedFragments.join(" ") };
 }
 
-async function fetchGooglePlacesReviewFallback(
-  lookup: ReviewLookup,
-  apiKey: string
-): Promise<ReviewSignal | null> {
-  const query = [lookup.venueName, lookup.city, lookup.state]
-    .filter(Boolean)
-    .join(", ");
 
-  const body: Record<string, unknown> = {
-    textQuery: query,
-    maxResultCount: 1,
-  };
-
-  if (lookup.city || lookup.state) {
-    const lat =
-      typeof (lookup as unknown as Record<string, unknown>).latitude ===
-      "number"
-        ? (lookup as unknown as Record<string, number>).latitude
-        : undefined;
-    const lng =
-      typeof (lookup as unknown as Record<string, unknown>).longitude ===
-      "number"
-        ? (lookup as unknown as Record<string, number>).longitude
-        : undefined;
-    if (lat && lng) {
-      body.locationBias = {
-        circle: { center: { latitude: lat, longitude: lng }, radius: 5000 },
-      };
-    }
-  }
-
-  try {
-    const response = await fetch(
-      "https://places.googleapis.com/v1/places:searchText",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Goog-Api-Key": apiKey,
-          "X-Goog-FieldMask":
-            "places.id,places.rating,places.userRatingCount,places.googleMapsUri",
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(10000),
-      }
-    );
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    const place = data?.places?.[0];
-    if (!place) return null;
-
-    const rating = sanitizeReviewRating(place.rating);
-    if (!rating) return null;
-
-    return {
-      rating,
-      reviewCount: sanitizeReviewCount(place.userRatingCount) ?? 0,
-      url: place.googleMapsUri ?? "",
-      source: "google_places_api",
-    };
-  } catch {
-    return null;
-  }
-}
