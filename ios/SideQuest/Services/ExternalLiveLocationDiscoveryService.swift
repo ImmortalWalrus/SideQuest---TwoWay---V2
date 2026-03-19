@@ -404,8 +404,6 @@ actor ExternalLiveLocationDiscoveryService {
                     googleReviewCache[cacheKey] = cacheEntry
                     signalsByKey[cacheKey] = signal
                     shouldPersistGoogleReviewCache = true
-                } else {
-                    googleReviewCache[cacheKey] = .some(nil)
                 }
             }
             if shouldPersistGoogleReviewCache {
@@ -2499,6 +2497,10 @@ actor ExternalLiveLocationDiscoveryService {
             urls.append(searchURL)
         }
 
+        if let placeSearchURL = googleLocalPlaceSearchURL(for: query), urls.contains(placeSearchURL) == false {
+            urls.append(placeSearchURL)
+        }
+
         for candidate in rawCandidates {
             guard let normalizedURL = normalizedHTTPURL(from: candidate) else { continue }
             if ExternalEventSupport.googleReviewURLNeedsIdentityValidation(normalizedURL.absoluteString),
@@ -2528,6 +2530,16 @@ actor ExternalLiveLocationDiscoveryService {
             URLQueryItem(name: "hl", value: "en"),
             URLQueryItem(name: "gl", value: "us"),
             URLQueryItem(name: "q", value: query)
+        ]
+        return components?.url
+    }
+
+    private nonisolated static func googleLocalPlaceSearchURL(for query: String) -> URL? {
+        var components = URLComponents(string: "https://www.google.com/search")
+        components?.queryItems = [
+            URLQueryItem(name: "hl", value: "en"),
+            URLQueryItem(name: "gl", value: "us"),
+            URLQueryItem(name: "q", value: query + " reviews")
         ]
         return components?.url
     }
@@ -2576,15 +2588,24 @@ actor ExternalLiveLocationDiscoveryService {
         session: URLSession
     ) async -> GoogleLocalReviewSignal? {
         for reviewURL in lookup.reviewURLs {
-            for attempt in 0..<2 {
+            for attempt in 0..<3 {
                 do {
+                    if attempt > 0 {
+                        try? await Task.sleep(for: .milliseconds(300 * attempt))
+                    }
                     var request = URLRequest(url: reviewURL)
                     request.httpMethod = "GET"
-                    request.timeoutInterval = 12
-                    request.setValue(desktopGoogleUserAgent, forHTTPHeaderField: "User-Agent")
+                    request.timeoutInterval = 18
+                    let ua = desktopGoogleUserAgent
+                    request.setValue(ua, forHTTPHeaderField: "User-Agent")
                     request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
                     request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
                     request.setValue("https://www.google.com/", forHTTPHeaderField: "Referer")
+                    request.setValue("1", forHTTPHeaderField: "DNT")
+                    request.setValue("navigate", forHTTPHeaderField: "Sec-Fetch-Mode")
+                    request.setValue("document", forHTTPHeaderField: "Sec-Fetch-Dest")
+                    request.setValue("none", forHTTPHeaderField: "Sec-Fetch-Site")
+                    request.setValue("?1", forHTTPHeaderField: "Sec-Fetch-User")
 
                     let (data, response) = try await session.data(for: request)
                     guard let statusCode = (response as? HTTPURLResponse)?.statusCode,
@@ -2594,6 +2615,9 @@ actor ExternalLiveLocationDiscoveryService {
                     }
 
                     let html = String(data: data, encoding: .utf8) ?? ""
+                    if html.contains("unusual traffic") || html.contains("captcha") {
+                        continue
+                    }
                     if let signal = parseGoogleLocalReviewSignal(
                         from: html,
                         lookup: lookup,
@@ -2602,9 +2626,7 @@ actor ExternalLiveLocationDiscoveryService {
                         return signal
                     }
                 } catch {
-                    if attempt == 1 {
-                        continue
-                    }
+                    continue
                 }
             }
         }
@@ -2635,7 +2657,7 @@ actor ExternalLiveLocationDiscoveryService {
 
         let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
         guard let regex = try? NSRegularExpression(
-            pattern: #"aria-label="Rated ([0-9.]+) out of 5,"|<span class="UIHjI[^"]*"[^>]*>([0-9.]+)</span>|aria-label="([0-9.]+) stars ?"|<span aria-hidden="true">([0-9.]+)</span>\s*<span class="ceNzKf[^"]*"[^>]*aria-label="[0-9.]+ stars ?""#,
+            pattern: #"aria-label="Rated ([0-9.]+) out of 5[,"]|<span class="(?:UIHjI|MW4etd|Aq14fc|jANrlb|yi40Hd|e4rVHe)[^"]*"[^>]*>([0-9.]+)</span>|aria-label="([0-9.]+) stars? ?"|<span aria-hidden="true">([0-9.]+)</span>\s*<span class="(?:ceNzKf|UY7F9|EBe2gf)[^"]*"[^>]*|class="[^"]*(?:rating|stars)[^"]*"[^>]*>\s*([0-9.]+)"#,
             options: []
         ) else {
             return nil
@@ -2644,7 +2666,7 @@ actor ExternalLiveLocationDiscoveryService {
         var bestSignal: (signal: GoogleLocalReviewSignal, score: Int, reviewCount: Int)?
 
         for match in regex.matches(in: html, options: [], range: nsRange) {
-            let ratingMatchRange = [1, 2, 3, 4]
+            let ratingMatchRange = [1, 2, 3, 4, 5]
                 .lazy
                 .map { match.range(at: $0) }
                 .first(where: { $0.location != NSNotFound })
@@ -2662,7 +2684,10 @@ actor ExternalLiveLocationDiscoveryService {
             let countCandidates = [
                 decodedHTMLText(firstCapture(pattern: #">([0-9][0-9,\.KkMm]*) reviews<"#, in: window)),
                 decodedHTMLText(firstCapture(pattern: #"([0-9][0-9,\.KkMm]*) Google reviews"#, in: window)),
-                decodedHTMLText(firstCapture(pattern: #"aria-label="([0-9][0-9,\.KkMm]*) reviews"#, in: window))
+                decodedHTMLText(firstCapture(pattern: #"aria-label="([0-9][0-9,\.KkMm]*) reviews"#, in: window)),
+                decodedHTMLText(firstCapture(pattern: #"\(([0-9][0-9,\.KkMm]*)\)"#, in: window)),
+                decodedHTMLText(firstCapture(pattern: #"class="(?:EBe2gf|UY7F9|RDApEe|jANrlb)[^"]*"[^>]*>([0-9][0-9,\.KkMm]*)<"#, in: window)),
+                decodedHTMLText(firstCapture(pattern: #">([0-9][0-9,\.KkMm]*) review"#, in: window))
             ]
             guard let rating = Double(ratingText) else {
                 continue
@@ -2670,11 +2695,13 @@ actor ExternalLiveLocationDiscoveryService {
             let reviewCount = countCandidates.lazy.compactMap(parseGoogleReviewCount).first
 
             let titlePatterns = [
-                #"<h1[^>]+class="[^"]*DUwDvf[^"]*lfPIob[^"]*"[^>]*>(.*?)</h1>"#,
-                #"<title>(.*?) - Google Maps</title>"#,
-                #"<span class="OSrXXb">(.*?)</span>"#,
-                #"<div class="dbg0pd">(.*?)</div>"#,
-                #"<div class="qBF1Pd[^"]*"[^>]*>(.*?)</div>"#
+                #"<h1[^>]+class="[^"]*(?:DUwDvf|lfPIob|fontHeadlineLarge)[^"]*"[^>]*>(.*?)</h1>"#,
+                #"<title>(.*?) - Google (?:Maps|Search)</title>"#,
+                #"<span class="(?:OSrXXb|SPZz6b|rHQ3hc)">(.*?)</span>"#,
+                #"<div class="(?:dbg0pd|rgnuSb|lMbq3e)">(.*?)</div>"#,
+                #"<div class="(?:qBF1Pd|NhRr3b)[^"]*"[^>]*>(.*?)</div>"#,
+                #"<h2[^>]+class="[^"]*qrShPb[^"]*"[^>]*>(.*?)</h2>"#,
+                #"data-attrid="title"[^>]*>(.*?)<"#
             ]
             let title = titlePatterns
                 .lazy
@@ -2876,21 +2903,78 @@ actor ExternalLiveLocationDiscoveryService {
             return rating
         }
 
+        for nullPrefixLen in [3, 4, 5, 6] {
+            guard array.count > nullPrefixLen else { continue }
+            let prefixAllNull = array.prefix(nullPrefixLen).allSatisfy { $0 is NSNull }
+            guard prefixAllNull else { continue }
+            if let rating = ExternalEventSupport.parseDouble(array[nullPrefixLen]),
+               rating >= 1.0,
+               rating <= 5.0 {
+                return rating
+            }
+        }
+
+        if array.count >= 4,
+           array[0] is String,
+           let rating = ExternalEventSupport.parseDouble(array[1]),
+           rating >= 1.0,
+           rating <= 5.0 {
+            return rating
+        }
+
+        if array.count >= 3,
+           array[0] is NSNull,
+           let rating = ExternalEventSupport.parseDouble(array[1]),
+           rating >= 1.0,
+           rating <= 5.0,
+           ExternalEventSupport.parseInt(array[2]) != nil {
+            return rating
+        }
+
         return nil
     }
 
     private nonisolated static func googleMapSearchReviewCount(in array: [Any]) -> Int? {
-        guard array.count >= 3,
-              let rating = ExternalEventSupport.parseDouble(array[0]),
-              rating >= 1.0,
-              rating <= 5.0,
-              let reviewCount = ExternalEventSupport.parseInt(array[2]),
-              reviewCount > 0
-        else {
-            return nil
+        if array.count >= 3,
+           let rating = ExternalEventSupport.parseDouble(array[0]),
+           rating >= 1.0,
+           rating <= 5.0,
+           let reviewCount = ExternalEventSupport.parseInt(array[2]),
+           reviewCount > 0 {
+            return reviewCount
         }
 
-        return reviewCount
+        if array.count >= 4,
+           array[0] is String,
+           let rating = ExternalEventSupport.parseDouble(array[1]),
+           rating >= 1.0,
+           rating <= 5.0,
+           let reviewCount = ExternalEventSupport.parseInt(array[3]),
+           reviewCount > 0 {
+            return reviewCount
+        }
+
+        if array.count >= 3,
+           array[0] is NSNull,
+           let rating = ExternalEventSupport.parseDouble(array[1]),
+           rating >= 1.0,
+           rating <= 5.0,
+           let reviewCount = ExternalEventSupport.parseInt(array[2]),
+           reviewCount > 0 {
+            return reviewCount
+        }
+
+        for i in 0..<min(array.count, 10) {
+            if let str = array[i] as? String,
+               str.lowercased().contains("review"),
+               i > 0,
+               let reviewCount = ExternalEventSupport.parseInt(array[i - 1]),
+               reviewCount > 0 {
+                return reviewCount
+            }
+        }
+
+        return nil
     }
 
     private nonisolated static func googleMapSearchReviewURL(
@@ -3003,8 +3087,15 @@ actor ExternalLiveLocationDiscoveryService {
         return String(value[range])
     }
 
-    private nonisolated static let desktopGoogleUserAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+    private nonisolated static let desktopGoogleUserAgents = [
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+    ]
+
+    private nonisolated static var desktopGoogleUserAgent: String {
+        desktopGoogleUserAgents[Int.random(in: 0..<desktopGoogleUserAgents.count)]
+    }
 
     private nonisolated static func applyGoogleLocalReviewSignal(
         _ signal: GoogleLocalReviewSignal,

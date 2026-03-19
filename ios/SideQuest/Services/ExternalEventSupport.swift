@@ -531,9 +531,26 @@ enum ExternalEventSupport {
     ]
 
     private static let googleReviewVenueDescriptorTokens: Set<String> = [
-        "bar", "bistro", "cafe", "club", "cocktail", "grill", "hall", "hotel", "kitchen",
-        "lounge", "music", "night", "nightclub", "pub", "restaurant", "room", "rooftop",
-        "saloon", "supperclub", "theater", "theatre", "venue"
+        "arena", "amphitheater", "amphitheatre", "auditorium",
+        "bar", "bistro", "bowl", "brewery",
+        "cafe", "center", "centre", "cinema", "club", "cocktail", "coliseum", "complex", "concert",
+        "dome",
+        "entertainment", "events",
+        "field", "forum",
+        "gallery", "garden", "gardens", "grill",
+        "hall", "hotel", "house",
+        "inn",
+        "kitchen",
+        "lanes", "live", "lounge",
+        "museum", "music",
+        "night", "nightclub",
+        "opera",
+        "palace", "park", "pavilion", "performing", "arts", "place", "plaza", "playhouse", "pub",
+        "resort", "restaurant", "room", "rooftop",
+        "saloon", "showroom", "space", "sports", "stadium", "stage", "steakhouse", "studio", "supperclub",
+        "taproom", "tavern", "theater", "theatre", "tower",
+        "venue", "village",
+        "winery"
     ]
 
     private static func normalizedPostalCode(_ value: String?) -> String {
@@ -555,13 +572,26 @@ enum ExternalEventSupport {
     ) -> Int {
         guard !expectedVenueName.isEmpty, !candidateName.isEmpty else { return 0 }
 
-        if expectedVenueName == candidateName {
+        let normalizedExpected = stripPunctuation(expectedVenueName)
+        let normalizedCandidate = stripPunctuation(candidateName)
+
+        if normalizedExpected == normalizedCandidate || expectedVenueName == candidateName {
             if hasExpectedAddress && hasCandidateAddressDigits && !addressMatch {
                 return 0
             }
             if addressMatch { return 14 }
             if localityMatch { return 11 }
             return 8
+        }
+
+        if normalizedExpected.contains(normalizedCandidate) || normalizedCandidate.contains(normalizedExpected) {
+            let shorter = min(normalizedExpected.count, normalizedCandidate.count)
+            let longer = max(normalizedExpected.count, normalizedCandidate.count)
+            if shorter > 4 && Double(shorter) / Double(longer) > 0.6 {
+                if addressMatch { return 12 }
+                if localityMatch { return 9 }
+                return 6
+            }
         }
 
         let expectedTokens = googleReviewIdentityTokens(from: expectedVenueName)
@@ -585,15 +615,27 @@ enum ExternalEventSupport {
                 if localityMatch { return 9 }
                 return 5
             }
-            guard addressMatch, extras.isSubset(of: googleReviewVenueDescriptorTokens) else {
-                return 0
+            if extras.isSubset(of: googleReviewVenueDescriptorTokens) {
+                if addressMatch { return 11 }
+                if localityMatch { return 7 }
+                return 4
             }
-            return 11
+            return 0
         }
 
+        let coverage = Double(sharedTokens.count) / Double(expectedTokens.count)
+
         guard expectedTokens.isSubset(of: candidateTokens) else {
+            if coverage >= 0.75 && expectedTokens.count >= 2 {
+                if addressMatch { return 8 }
+                if localityMatch { return 6 }
+                return 3
+            }
             if addressMatch && expectedTokens.count >= 3 && sharedTokens.count == expectedTokens.count - 1 {
                 return 7
+            }
+            if localityMatch && expectedTokens.count >= 3 && sharedTokens.count == expectedTokens.count - 1 {
+                return 5
             }
             return 0
         }
@@ -609,10 +651,17 @@ enum ExternalEventSupport {
             if localityMatch { return 7 }
             return 5
         }
-        if addressMatch && extras.count == 1 {
-            return 8
+        if extras.count <= 2 {
+            if addressMatch { return 8 }
+            if localityMatch { return 5 }
         }
         return 0
+    }
+
+    private static func stripPunctuation(_ value: String) -> String {
+        value.filter { $0.isLetter || $0.isNumber || $0 == " " }
+            .split(separator: " ")
+            .joined(separator: " ")
     }
 
     private static func googleReviewIdentityTokens(from normalizedValue: String) -> Set<String> {
