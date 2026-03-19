@@ -209,16 +209,16 @@ struct AuthView: View {
         Task {
             do {
                 if mode == .signUp {
-                    try await appState.firebase.signUpWithEmail(trimmedEmail, password: password)
+                    try await appState.auth.signUpWithEmail(trimmedEmail, password: password)
                     appState.onAuthCompleted(isNewUser: true)
                     appState.onAuthCompleted(isNewUser: true)
                 } else {
-                    try await appState.firebase.signInWithEmail(trimmedEmail, password: password)
+                    try await appState.auth.signInWithEmail(trimmedEmail, password: password)
                     appState.onAuthCompleted(isNewUser: false)
                     appState.onAuthCompleted(isNewUser: false)
                 }
             } catch {
-                errorMessage = appState.firebase.authError ?? error.localizedDescription
+                errorMessage = appState.auth.authError ?? error.localizedDescription
             }
             isLoading = false
         }
@@ -228,7 +228,7 @@ struct AuthView: View {
         let trimmedEmail = resetEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmedEmail.isEmpty else { return }
         Task {
-            try? await appState.firebase.sendPasswordReset(email: trimmedEmail)
+            try? await appState.auth.sendPasswordReset(email: trimmedEmail)
             resetEmailSent = true
         }
     }
@@ -238,11 +238,11 @@ struct AuthView: View {
         errorMessage = nil
         Task {
             do {
-                try await appState.firebase.signInWithGoogle()
+                try await appState.auth.signInWithGoogle()
                 appState.onAuthCompleted(isNewUser: false)
 
             } catch {
-                errorMessage = appState.firebase.authError ?? error.localizedDescription
+                errorMessage = appState.auth.authError ?? error.localizedDescription
             }
             isGoogleLoading = false
         }

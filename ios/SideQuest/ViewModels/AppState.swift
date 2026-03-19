@@ -6,7 +6,7 @@ import AVFoundation
 
 @Observable
 class AppState {
-    var firebase = FirebaseService.shared
+    var auth = AuthService.shared
     var api = APIService.shared
     var hasOnboarded: Bool = UserDefaults.standard.bool(forKey: "hasOnboarded")
     var isAuthenticated: Bool = false
@@ -166,10 +166,10 @@ class AppState {
         generateSampleTemplates()
         loadCustomQuestData()
         loadStoryData()
-        firebase.checkExistingSession()
-        if firebase.isAuthenticated {
+        auth.checkExistingSession()
+        if auth.isAuthenticated {
             isAuthenticated = true
-            if let uid = firebase.currentUserId, profile.id.isEmpty {
+            if let uid = auth.currentUserId, profile.id.isEmpty {
                 profile.id = uid
             }
         }
@@ -367,7 +367,7 @@ class AppState {
 
     func onAuthCompleted(isNewUser: Bool) {
         isAuthenticated = true
-        if let uid = firebase.currentUserId {
+        if let uid = auth.currentUserId {
             profile.id = uid
         }
         if isNewUser {
@@ -505,7 +505,7 @@ class AppState {
     }
 
     func prepareOnboarding(username: String, avatar: String) {
-        if let uid = firebase.currentUserId, profile.id.isEmpty {
+        if let uid = auth.currentUserId, profile.id.isEmpty {
             profile.id = uid
         }
         profile.username = username
@@ -1993,7 +1993,7 @@ class AppState {
     }
 
     func completeOnboarding(username: String, avatar: String) {
-        if let uid = firebase.currentUserId, profile.id.isEmpty {
+        if let uid = auth.currentUserId, profile.id.isEmpty {
             profile.id = uid
         }
         profile.username = username
@@ -2720,7 +2720,7 @@ class AppState {
     }
 
     func signOut() {
-        firebase.signOut()
+        auth.signOut()
         isAuthenticated = false
         needsProfileSetup = false
         hasOnboarded = false

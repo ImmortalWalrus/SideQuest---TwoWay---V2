@@ -1,8 +1,8 @@
 import Foundation
 
 @Observable
-final class FirebaseService {
-    static let shared = FirebaseService()
+final class AuthService {
+    static let shared = AuthService()
 
     private(set) var currentUserId: String?
     private(set) var isAuthenticated: Bool = false
@@ -24,7 +24,7 @@ final class FirebaseService {
         guard password.count >= 6 else {
             let msg = "Password must be at least 6 characters."
             authError = msg
-            throw FirebaseServiceError.authFailed(msg)
+            throw AuthServiceError.authFailed(msg)
         }
         let uid = UUID().uuidString
         currentUserId = uid
@@ -66,7 +66,7 @@ final class FirebaseService {
     }
 }
 
-nonisolated enum FirebaseServiceError: Error, LocalizedError, Sendable {
+nonisolated enum AuthServiceError: Error, LocalizedError, Sendable {
     case notAuthenticated
     case userNotFound
     case uploadFailed

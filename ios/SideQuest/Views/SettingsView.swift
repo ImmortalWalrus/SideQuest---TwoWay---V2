@@ -14,7 +14,7 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 Section("Account") {
-                    if let email = appState.firebase.userEmail {
+                    if let email = appState.auth.userEmail {
                         HStack {
                             Label("Email", systemImage: "envelope.fill")
                             Spacer()
