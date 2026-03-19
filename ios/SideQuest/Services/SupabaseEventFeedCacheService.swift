@@ -95,15 +95,37 @@ actor SupabaseEventFeedCacheService {
         }
 
         if let request = makeLoadRequest(searchLocation: searchLocation, intent: intent),
-           let rows = await fetchRows(for: request),
-           let candidate = decodeCandidates(from: rows).first {
-            return Self.sanitizedSnapshot(candidate.snapshot, intent: intent)
+           let rows = await fetchRows(for: request) {
+            let candidates = decodeCandidates(from: rows)
+            if let snapshot = await loadedSnapshot(
+                from: candidates,
+                searchLocation: searchLocation,
+                intent: intent
+            ) {
+                return snapshot
+            }
         }
 
         if let request = makeFallbackLoadRequest(searchLocation: searchLocation, intent: intent),
            let rows = await fetchRows(for: request),
            let candidate = Self.bestFallbackCandidate(from: decodeCandidates(from: rows), for: searchLocation) {
-            return Self.sanitizedSnapshot(candidate.snapshot, intent: intent)
+            let sanitizedCandidate = SnapshotLoadCandidate(
+                snapshot: Self.sanitizedSnapshot(candidate.snapshot, intent: intent),
+                quality: candidate.quality,
+                fetchedAt: candidate.fetchedAt,
+                city: candidate.city,
+                state: candidate.state,
+                displayName: candidate.displayName,
+                latitude: candidate.latitude,
+                longitude: candidate.longitude,
+                bucketLatitude: candidate.bucketLatitude,
+                bucketLongitude: candidate.bucketLongitude
+            )
+            return await repairedLoadedSnapshot(
+                sanitizedCandidate.snapshot,
+                searchLocation: searchLocation,
+                intent: intent
+            )
         }
 
         return nil
@@ -151,8 +173,46 @@ actor SupabaseEventFeedCacheService {
             URLQueryItem(name: "intent", value: "eq.\(intent.rawValue)"),
             URLQueryItem(name: "expires_at", value: "gte.\(retentionCutoff)"),
             URLQueryItem(name: "order", value: "quality.desc,fetched_at.desc"),
-            URLQueryItem(name: "limit", value: "1")
+            URLQueryItem(name: "limit", value: "4")
         ]
+
+        guard let url = components?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        applyHeaders(to: &request)
+        request.setValue(configuration.schema, forHTTPHeaderField: "Accept-Profile")
+        return request
+    }
+
+    private func makeReviewRepairRequest(
+        searchLocation: ExternalEventSearchLocation
+    ) -> URLRequest? {
+        guard let projectURL = configuration.projectURL else { return nil }
+        let retentionCutoff = Self.postgrestTimestamp(from: Date())
+
+        var components = URLComponents(
+            url: projectURL.appendingPathComponent("rest/v1/\(configuration.snapshotTable)"),
+            resolvingAgainstBaseURL: false
+        )
+
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(
+                name: "select",
+                value: "snapshot,fetched_at,expires_at,quality,city,state,display_name,latitude,longitude,bucket_latitude,bucket_longitude"
+            ),
+            URLQueryItem(name: "country_code", value: "eq.\(searchLocation.countryCode)"),
+            URLQueryItem(name: "display_name", value: "eq.\(searchLocation.displayName)"),
+            URLQueryItem(name: "expires_at", value: "gte.\(retentionCutoff)"),
+            URLQueryItem(name: "order", value: "quality.desc,fetched_at.desc"),
+            URLQueryItem(name: "limit", value: "12")
+        ]
+
+        if let state = searchLocation.state?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !state.isEmpty {
+            queryItems.append(URLQueryItem(name: "state", value: "eq.\(state)"))
+        }
+
+        components?.queryItems = queryItems
 
         guard let url = components?.url else { return nil }
         var request = URLRequest(url: url)
@@ -308,6 +368,72 @@ actor SupabaseEventFeedCacheService {
                 bucketLongitude: Self.doubleValue(from: row["bucket_longitude"])
             )
         }
+    }
+
+    private func loadedSnapshot(
+        from candidates: [SnapshotLoadCandidate],
+        searchLocation: ExternalEventSearchLocation,
+        intent: ExternalDiscoveryIntent
+    ) async -> ExternalLocationDiscoverySnapshot? {
+        guard !candidates.isEmpty else { return nil }
+
+        let sanitizedCandidates = candidates.map { candidate in
+            SnapshotLoadCandidate(
+                snapshot: Self.sanitizedSnapshot(candidate.snapshot, intent: intent),
+                quality: candidate.quality,
+                fetchedAt: candidate.fetchedAt,
+                city: candidate.city,
+                state: candidate.state,
+                displayName: candidate.displayName,
+                latitude: candidate.latitude,
+                longitude: candidate.longitude,
+                bucketLatitude: candidate.bucketLatitude,
+                bucketLongitude: candidate.bucketLongitude
+            )
+        }
+
+        guard let preferred = Self.bestExactCandidate(from: sanitizedCandidates, intent: intent) else {
+            return nil
+        }
+
+        return await repairedLoadedSnapshot(
+            preferred.snapshot,
+            searchLocation: searchLocation,
+            intent: intent
+        )
+    }
+
+    private func repairedLoadedSnapshot(
+        _ snapshot: ExternalLocationDiscoverySnapshot,
+        searchLocation: ExternalEventSearchLocation,
+        intent: ExternalDiscoveryIntent
+    ) async -> ExternalLocationDiscoverySnapshot {
+        guard Self.needsSupplementalReviewRepair(snapshot) else {
+            return snapshot
+        }
+
+        guard let request = makeReviewRepairRequest(searchLocation: searchLocation),
+              let rows = await fetchRows(for: request)
+        else {
+            return snapshot
+        }
+
+        let donorCandidates = decodeCandidates(from: rows).map { candidate in
+            SnapshotLoadCandidate(
+                snapshot: Self.sanitizedSnapshot(candidate.snapshot, intent: intent),
+                quality: candidate.quality,
+                fetchedAt: candidate.fetchedAt,
+                city: candidate.city,
+                state: candidate.state,
+                displayName: candidate.displayName,
+                latitude: candidate.latitude,
+                longitude: candidate.longitude,
+                bucketLatitude: candidate.bucketLatitude,
+                bucketLongitude: candidate.bucketLongitude
+            )
+        }
+
+        return Self.repairedGoogleReviewSnapshot(snapshot, using: donorCandidates)
     }
 
     nonisolated private static func cacheKey(
@@ -507,6 +633,278 @@ actor SupabaseEventFeedCacheService {
         let latitudeMiles = (candidateLatitude - searchLatitude) * 69.0
         let longitudeMiles = (candidateLongitude - searchLongitude) * max(cos(searchLatitude * .pi / 180.0), 0.1) * 69.0
         return sqrt(latitudeMiles * latitudeMiles + longitudeMiles * longitudeMiles)
+    }
+
+    nonisolated private static func bestExactCandidate(
+        from candidates: [SnapshotLoadCandidate],
+        intent: ExternalDiscoveryIntent
+    ) -> SnapshotLoadCandidate? {
+        guard !candidates.isEmpty else { return nil }
+
+        return candidates.max { lhs, rhs in
+            if lhs.quality != rhs.quality {
+                return lhs.quality == .fast
+            }
+
+            let lhsFresh = isFresh(snapshot: lhs.snapshot, intent: intent)
+            let rhsFresh = isFresh(snapshot: rhs.snapshot, intent: intent)
+            if lhsFresh != rhsFresh {
+                return !lhsFresh
+            }
+
+            let lhsPoisoned = poisonedGoogleReviewSignalCount(in: lhs.snapshot.mergedEvents)
+            let rhsPoisoned = poisonedGoogleReviewSignalCount(in: rhs.snapshot.mergedEvents)
+            if lhsPoisoned != rhsPoisoned {
+                return lhsPoisoned > rhsPoisoned
+            }
+
+            let lhsReviewCount = validReviewSignalCount(in: lhs.snapshot.mergedEvents)
+            let rhsReviewCount = validReviewSignalCount(in: rhs.snapshot.mergedEvents)
+            if lhsReviewCount != rhsReviewCount {
+                return lhsReviewCount < rhsReviewCount
+            }
+
+            let lhsCount = lhs.snapshot.mergedEvents.count
+            let rhsCount = rhs.snapshot.mergedEvents.count
+            if lhsCount != rhsCount {
+                return lhsCount < rhsCount
+            }
+
+            let lhsDate = lhs.fetchedAt ?? lhs.snapshot.fetchedAt
+            let rhsDate = rhs.fetchedAt ?? rhs.snapshot.fetchedAt
+            return lhsDate < rhsDate
+        }
+    }
+
+    nonisolated private static func needsSupplementalReviewRepair(
+        _ snapshot: ExternalLocationDiscoverySnapshot
+    ) -> Bool {
+        poisonedGoogleReviewSignalCount(in: snapshot.mergedEvents) > 0
+    }
+
+    nonisolated private static func poisonedGoogleReviewSignalCount(in events: [ExternalEvent]) -> Int {
+        events.reduce(into: 0) { count, event in
+            guard validReviewRating(for: event) == nil else { return }
+
+            let payload = decodedPayload(from: event.rawSourcePayload)
+            let signalSource = firstPayloadString(payload, keys: ["google_review_signal_source"])
+            let hasGoogleReviewURL = firstPayloadString(
+                payload,
+                keys: ["google_places_url", "google_maps_uri", "google_places_google_maps_uri"]
+            ) != nil
+
+            if signalSource == "scraped_google_maps" || hasGoogleReviewURL {
+                count += 1
+            }
+        }
+    }
+
+    nonisolated private static func validReviewSignalCount(in events: [ExternalEvent]) -> Int {
+        events.reduce(into: 0) { count, event in
+            if validReviewRating(for: event) != nil {
+                count += 1
+            }
+        }
+    }
+
+    nonisolated private static func repairedGoogleReviewSnapshot(
+        _ snapshot: ExternalLocationDiscoverySnapshot,
+        using donorCandidates: [SnapshotLoadCandidate]
+    ) -> ExternalLocationDiscoverySnapshot {
+        guard !donorCandidates.isEmpty else {
+            return snapshot
+        }
+
+        let donorSignals = donorSignalsByKey(from: donorCandidates)
+        guard !donorSignals.isEmpty else {
+            return snapshot
+        }
+
+        let repairedMergedEvents = snapshot.mergedEvents.map {
+            repairedGoogleReviewEvent($0, donorSignalsByKey: donorSignals)
+        }
+        let repairedSourceResults = snapshot.eventSnapshot.sourceResults.map { result in
+            ExternalEventSourceResult(
+                source: result.source,
+                usedCache: result.usedCache,
+                fetchedAt: result.fetchedAt,
+                endpoints: result.endpoints,
+                note: result.note,
+                nextCursor: result.nextCursor,
+                events: result.events.map { repairedGoogleReviewEvent($0, donorSignalsByKey: donorSignals) }
+            )
+        }
+        let repairedEventSnapshot = ExternalEventIngestionSnapshot(
+            fetchedAt: snapshot.eventSnapshot.fetchedAt,
+            query: snapshot.eventSnapshot.query,
+            sourceResults: repairedSourceResults,
+            mergedEvents: repairedMergedEvents,
+            dedupeGroups: snapshot.eventSnapshot.dedupeGroups
+        )
+
+        return ExternalLocationDiscoverySnapshot(
+            fetchedAt: snapshot.fetchedAt,
+            searchLocation: snapshot.searchLocation,
+            appliedProfiles: snapshot.appliedProfiles,
+            venueSnapshot: snapshot.venueSnapshot,
+            eventSnapshot: repairedEventSnapshot,
+            mergedEvents: repairedMergedEvents,
+            notes: snapshot.notes
+        )
+    }
+
+    nonisolated private static func donorSignalsByKey(
+        from candidates: [SnapshotLoadCandidate]
+    ) -> [String: ExternalEvent] {
+        var donors: [String: ExternalEvent] = [:]
+
+        for candidate in candidates {
+            for event in candidate.snapshot.mergedEvents {
+                guard validReviewRating(for: event) != nil else { continue }
+                for key in googleReviewRepairKeys(for: event) where donors[key] == nil {
+                    donors[key] = event
+                }
+            }
+        }
+
+        return donors
+    }
+
+    nonisolated private static func repairedGoogleReviewEvent(
+        _ event: ExternalEvent,
+        donorSignalsByKey: [String: ExternalEvent]
+    ) -> ExternalEvent {
+        let existingRating = validReviewRating(for: event)
+        let existingReviewCount = validReviewCount(for: event)
+
+        guard existingRating == nil || existingReviewCount == nil else {
+            return event
+        }
+
+        let donor = googleReviewRepairKeys(for: event)
+            .lazy
+            .compactMap { donorSignalsByKey[$0] }
+            .first
+
+        guard let donor else {
+            return event
+        }
+
+        var repaired = event
+        if existingRating == nil, let donorRating = validReviewRating(for: donor) {
+            repaired.venueRating = donorRating
+        }
+        if existingReviewCount == nil, let donorReviewCount = validReviewCount(for: donor) {
+            repaired.venuePopularityCount = donorReviewCount
+        }
+
+        let donorPayload = decodedPayload(from: donor.rawSourcePayload)
+        if !donorPayload.isEmpty {
+            var payload = decodedPayload(from: repaired.rawSourcePayload)
+            let reviewKeys = [
+                "google_places_rating",
+                "google_places_user_rating_count",
+                "google_places_userRatingCount",
+                "google_places_url",
+                "google_maps_uri",
+                "google_places_google_maps_uri",
+                "google_review_signal_source"
+            ]
+            for key in reviewKeys {
+                if let donorValue = donorPayload[key] {
+                    payload[key] = donorValue
+                }
+            }
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+               let rawPayload = String(data: data, encoding: .utf8) {
+                repaired.rawSourcePayload = rawPayload
+            }
+        }
+
+        return ExternalEventSupport.sanitizedGoogleReviewIdentity(repaired)
+    }
+
+    nonisolated private static func googleReviewRepairKeys(for event: ExternalEvent) -> [String] {
+        let venueKey = ExternalEventSupport.normalizeToken(event.venueName ?? event.title)
+        let addressKey = ExternalEventSupport.normalizeToken(event.addressLine1)
+        let cityKey = ExternalEventSupport.normalizeToken(event.city)
+        let stateKey = ExternalEventSupport.normalizeStateToken(event.state)
+        let postalKey = normalizedPostalCode(event.postalCode)
+
+        var keys: [String] = []
+        if !venueKey.isEmpty, !postalKey.isEmpty {
+            keys.append("venue:\(venueKey)|postal:\(postalKey)")
+        }
+        if !venueKey.isEmpty, !addressKey.isEmpty, !cityKey.isEmpty, !stateKey.isEmpty {
+            keys.append("venue:\(venueKey)|address:\(addressKey)|city:\(cityKey)|state:\(stateKey)")
+        }
+        if !venueKey.isEmpty, !cityKey.isEmpty, !stateKey.isEmpty {
+            keys.append("venue:\(venueKey)|city:\(cityKey)|state:\(stateKey)")
+        }
+        var uniqueKeys: [String] = []
+        var seen = Set<String>()
+        for key in keys where seen.insert(key).inserted {
+            uniqueKeys.append(key)
+        }
+        return uniqueKeys
+    }
+
+    nonisolated private static func validReviewRating(for event: ExternalEvent) -> Double? {
+        if let rating = event.venueRating, rating >= 1.0, rating <= 5.0 {
+            return rating
+        }
+
+        let payload = decodedPayload(from: event.rawSourcePayload)
+        let candidates: [Any?] = [
+            payload["google_places_rating"],
+            payload["google_rating"],
+            payload["venue_rating"],
+            payload["rating"]
+        ]
+
+        for candidate in candidates {
+            if let rating = ExternalEventSupport.parseDouble(candidate),
+               rating >= 1.0,
+               rating <= 5.0 {
+                return rating
+            }
+        }
+
+        return nil
+    }
+
+    nonisolated private static func validReviewCount(for event: ExternalEvent) -> Int? {
+        if let count = event.venuePopularityCount, count > 0 {
+            return count
+        }
+
+        let payload = decodedPayload(from: event.rawSourcePayload)
+        let candidates: [Any?] = [
+            payload["google_places_user_rating_count"],
+            payload["google_places_userRatingCount"],
+            payload["userRatingCount"],
+            payload["ratingCount"],
+            payload["review_count"],
+            payload["reviewCount"],
+            payload["reviews"]
+        ]
+
+        for candidate in candidates {
+            if let count = ExternalEventSupport.parseInt(candidate), count > 0 {
+                return count
+            }
+        }
+
+        return nil
+    }
+
+    nonisolated private static func normalizedPostalCode(_ value: String?) -> String {
+        guard let value else { return "" }
+        let digits = value.filter(\.isNumber)
+        if digits.count >= 5 {
+            return String(digits.prefix(5))
+        }
+        return digits
     }
 
     nonisolated private static func dateValue(from rawValue: Any?) -> Date? {
