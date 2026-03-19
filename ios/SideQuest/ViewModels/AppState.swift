@@ -679,7 +679,7 @@ class AppState {
 
         if shouldPreserveVisibleFeedDuringRefresh {
             isRefreshingExternalEvents = false
-            scheduleFullExternalEventRefresh(
+            scheduleBackgroundRefresh(
                 searchLocation: searchLocation,
                 forceRefresh: true,
                 refreshGeneration: refreshGeneration,
@@ -689,12 +689,12 @@ class AppState {
             return
         }
 
-        if let cachedSnapshot = await supabaseEventFeedCacheService.load(
+        if let serverSnapshot = await supabaseEventFeedCacheService.load(
             searchLocation: searchLocation,
             intent: discoveryIntent
         ) {
-            let cachedDisplaySnapshot = await displaySnapshot(
-                from: cachedSnapshot,
+            let serverDisplaySnapshot = await displaySnapshot(
+                from: serverSnapshot,
                 searchLocation: searchLocation,
                 primaryIntent: discoveryIntent,
                 filterOption: externalEventFilterOption
@@ -703,24 +703,19 @@ class AppState {
                 isRefreshingExternalEvents = false
                 return
             }
-            if shouldApplyCachedDiscoverySnapshot(cachedDisplaySnapshot) {
-                applyExternalDiscoverySnapshot(cachedDisplaySnapshot, intent: discoveryIntent)
+            if shouldApplyCachedDiscoverySnapshot(serverDisplaySnapshot) {
+                applyExternalDiscoverySnapshot(serverDisplaySnapshot, intent: discoveryIntent)
                 isRefreshingExternalEvents = false
-                if shouldRunLocalNightlifeRepair(for: cachedSnapshot, intent: discoveryIntent) {
+                if shouldRunLocalNightlifeRepair(for: serverSnapshot, intent: discoveryIntent) {
                     scheduleCachedNightlifeRepair(
-                        baseSnapshot: cachedSnapshot,
+                        baseSnapshot: serverSnapshot,
                         searchLocation: searchLocation,
                         refreshGeneration: refreshGeneration,
                         intent: discoveryIntent
                     )
                 } else if forceRefresh
-                            || shouldScheduleFullRefresh(
-                                for: cachedDisplaySnapshot,
-                                requestedSearchLocation: searchLocation,
-                                intent: discoveryIntent
-                            )
-                            || !SupabaseEventFeedCacheService.isFresh(snapshot: cachedSnapshot, intent: discoveryIntent) {
-                    scheduleFullExternalEventRefresh(
+                            || !SupabaseEventFeedCacheService.isFresh(snapshot: serverSnapshot, intent: discoveryIntent) {
+                    scheduleBackgroundRefresh(
                         searchLocation: searchLocation,
                         forceRefresh: true,
                         refreshGeneration: refreshGeneration,
@@ -732,7 +727,7 @@ class AppState {
             }
         }
 
-        let quickSnapshot = await externalLiveLocationDiscoveryService.discover(
+        let localSnapshot = await externalLiveLocationDiscoveryService.discover(
             searchLocation: searchLocation,
             forceRefresh: forceRefresh,
             pageSize: initialExternalEventPageSize,
@@ -740,8 +735,8 @@ class AppState {
             mode: initialMode,
             intent: discoveryIntent
         )
-        let displayQuickSnapshot = await displaySnapshot(
-            from: quickSnapshot,
+        let displayLocalSnapshot = await displaySnapshot(
+            from: localSnapshot,
             searchLocation: searchLocation,
             primaryIntent: discoveryIntent,
             filterOption: externalEventFilterOption
@@ -750,20 +745,36 @@ class AppState {
             isRefreshingExternalEvents = false
             return
         }
-        if shouldApplyQuickDiscoverySnapshot(displayQuickSnapshot) {
-            applyExternalDiscoverySnapshot(displayQuickSnapshot, intent: discoveryIntent)
-            if shouldPersistDiscoverySnapshot(quickSnapshot, mode: initialMode) {
-                persistExternalDiscoverySnapshot(quickSnapshot, intent: discoveryIntent, quality: .fast)
+        if shouldApplyQuickDiscoverySnapshot(displayLocalSnapshot) {
+            applyExternalDiscoverySnapshot(displayLocalSnapshot, intent: discoveryIntent)
+            if shouldPersistDiscoverySnapshot(localSnapshot, mode: initialMode) {
+                persistExternalDiscoverySnapshot(localSnapshot, intent: discoveryIntent, quality: .fast)
             }
         }
         isRefreshingExternalEvents = false
 
-        scheduleFullExternalEventRefresh(
+        scheduleBackgroundRefresh(
             searchLocation: searchLocation,
             forceRefresh: forceRefresh,
             refreshGeneration: refreshGeneration,
             intent: discoveryIntent,
             filterOption: externalEventFilterOption
+        )
+    }
+
+    private func scheduleBackgroundRefresh(
+        searchLocation: ExternalEventSearchLocation,
+        forceRefresh: Bool,
+        refreshGeneration: Int,
+        intent: ExternalDiscoveryIntent,
+        filterOption: ExternalEventFilterOption
+    ) {
+        scheduleFullExternalEventRefresh(
+            searchLocation: searchLocation,
+            forceRefresh: forceRefresh,
+            refreshGeneration: refreshGeneration,
+            intent: intent,
+            filterOption: filterOption
         )
     }
 
