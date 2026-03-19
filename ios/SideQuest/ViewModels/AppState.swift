@@ -1058,6 +1058,12 @@ class AppState {
             return false
         }
 
+        let currentCoverage = venueReviewCoverage(in: currentSnapshot.mergedEvents)
+        let incomingCoverage = venueReviewCoverage(in: snapshot.mergedEvents)
+        if materiallyDegradedReviewCoverage(current: currentCoverage, incoming: incomingCoverage) {
+            return false
+        }
+
         return true
     }
 
@@ -1354,6 +1360,10 @@ class AppState {
             return true
         }
 
+        if materiallyDegradedReviewCoverage(current: currentCoverage, incoming: incomingCoverage) {
+            return false
+        }
+
         if incomingCount == 0 && currentCount > 0 {
             return false
         }
@@ -1367,6 +1377,15 @@ class AppState {
         }
 
         return true
+    }
+
+    private func materiallyDegradedReviewCoverage(
+        current: (coveredCount: Int, eligibleCount: Int, coverage: Double),
+        incoming: (coveredCount: Int, eligibleCount: Int, coverage: Double)
+    ) -> Bool {
+        current.eligibleCount >= 8
+            && current.coveredCount >= incoming.coveredCount + 4
+            && current.coverage >= incoming.coverage + 0.15
     }
 
     private func persistExternalDiscoverySnapshot(

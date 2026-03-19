@@ -201,15 +201,25 @@ actor SupabaseEventFeedCacheService {
                 value: "snapshot,fetched_at,expires_at,quality,city,state,display_name,latitude,longitude,bucket_latitude,bucket_longitude"
             ),
             URLQueryItem(name: "country_code", value: "eq.\(searchLocation.countryCode)"),
-            URLQueryItem(name: "display_name", value: "eq.\(searchLocation.displayName)"),
             URLQueryItem(name: "expires_at", value: "gte.\(retentionCutoff)"),
             URLQueryItem(name: "order", value: "quality.desc,fetched_at.desc"),
-            URLQueryItem(name: "limit", value: "12")
+            URLQueryItem(name: "limit", value: "32")
         ]
 
         if let state = searchLocation.state?.trimmingCharacters(in: .whitespacesAndNewlines),
            !state.isEmpty {
             queryItems.append(URLQueryItem(name: "state", value: "eq.\(state)"))
+        }
+
+        if let latitude = searchLocation.latitude,
+           let longitude = searchLocation.longitude {
+            let radius = Self.reviewRepairCoordinateRadius(for: searchLocation)
+            queryItems.append(URLQueryItem(name: "latitude", value: "gte.\(Self.coordinateString(latitude - radius))"))
+            queryItems.append(URLQueryItem(name: "latitude", value: "lte.\(Self.coordinateString(latitude + radius))"))
+            queryItems.append(URLQueryItem(name: "longitude", value: "gte.\(Self.coordinateString(longitude - radius))"))
+            queryItems.append(URLQueryItem(name: "longitude", value: "lte.\(Self.coordinateString(longitude + radius))"))
+        } else {
+            queryItems.append(URLQueryItem(name: "display_name", value: "eq.\(searchLocation.displayName)"))
         }
 
         components?.queryItems = queryItems
@@ -399,23 +409,26 @@ actor SupabaseEventFeedCacheService {
         return await repairedLoadedSnapshot(
             preferred.snapshot,
             searchLocation: searchLocation,
-            intent: intent
+            intent: intent,
+            donorCandidates: sanitizedCandidates
         )
     }
 
     private func repairedLoadedSnapshot(
         _ snapshot: ExternalLocationDiscoverySnapshot,
         searchLocation: ExternalEventSearchLocation,
-        intent: ExternalDiscoveryIntent
+        intent: ExternalDiscoveryIntent,
+        donorCandidates: [SnapshotLoadCandidate] = []
     ) async -> ExternalLocationDiscoverySnapshot {
-        guard Self.needsSupplementalReviewRepair(snapshot) else {
-            return snapshot
+        let locallyRepairedSnapshot = Self.repairedGoogleReviewSnapshot(snapshot, using: donorCandidates)
+        guard Self.needsSupplementalReviewRepair(locallyRepairedSnapshot) else {
+            return locallyRepairedSnapshot
         }
 
         guard let request = makeReviewRepairRequest(searchLocation: searchLocation),
               let rows = await fetchRows(for: request)
         else {
-            return snapshot
+            return locallyRepairedSnapshot
         }
 
         let donorCandidates = decodeCandidates(from: rows).map { candidate in
@@ -433,7 +446,7 @@ actor SupabaseEventFeedCacheService {
             )
         }
 
-        return Self.repairedGoogleReviewSnapshot(snapshot, using: donorCandidates)
+        return Self.repairedGoogleReviewSnapshot(locallyRepairedSnapshot, using: donorCandidates)
     }
 
     nonisolated private static func cacheKey(
@@ -646,12 +659,6 @@ actor SupabaseEventFeedCacheService {
                 return lhs.quality == .fast
             }
 
-            let lhsFresh = isFresh(snapshot: lhs.snapshot, intent: intent)
-            let rhsFresh = isFresh(snapshot: rhs.snapshot, intent: intent)
-            if lhsFresh != rhsFresh {
-                return !lhsFresh
-            }
-
             let lhsPoisoned = poisonedGoogleReviewSignalCount(in: lhs.snapshot.mergedEvents)
             let rhsPoisoned = poisonedGoogleReviewSignalCount(in: rhs.snapshot.mergedEvents)
             if lhsPoisoned != rhsPoisoned {
@@ -662,6 +669,12 @@ actor SupabaseEventFeedCacheService {
             let rhsReviewCount = validReviewSignalCount(in: rhs.snapshot.mergedEvents)
             if lhsReviewCount != rhsReviewCount {
                 return lhsReviewCount < rhsReviewCount
+            }
+
+            let lhsFresh = isFresh(snapshot: lhs.snapshot, intent: intent)
+            let rhsFresh = isFresh(snapshot: rhs.snapshot, intent: intent)
+            if lhsFresh != rhsFresh {
+                return !lhsFresh
             }
 
             let lhsCount = lhs.snapshot.mergedEvents.count
@@ -680,6 +693,7 @@ actor SupabaseEventFeedCacheService {
         _ snapshot: ExternalLocationDiscoverySnapshot
     ) -> Bool {
         poisonedGoogleReviewSignalCount(in: snapshot.mergedEvents) > 0
+            || repairableGoogleReviewGapCount(in: snapshot.mergedEvents) > 0
     }
 
     nonisolated private static func poisonedGoogleReviewSignalCount(in events: [ExternalEvent]) -> Int {
@@ -705,6 +719,29 @@ actor SupabaseEventFeedCacheService {
                 count += 1
             }
         }
+    }
+
+    nonisolated private static func repairableGoogleReviewGapCount(in events: [ExternalEvent]) -> Int {
+        events.reduce(into: 0) { count, event in
+            guard validReviewRating(for: event) == nil else { return }
+            guard isRepairEligibleGoogleReviewEvent(event) else { return }
+            count += 1
+        }
+    }
+
+    nonisolated private static func isRepairEligibleGoogleReviewEvent(_ event: ExternalEvent) -> Bool {
+        if event.eventType == .partyNightlife || event.recordKind == .venueNight,
+           ExternalEventSupport.isLikelyClubLikeNightlifeVenue(event) {
+            return false
+        }
+
+        let venueKey = ExternalEventSupport.normalizeToken(event.venueName ?? event.title)
+        guard !venueKey.isEmpty else { return false }
+
+        let cityKey = ExternalEventSupport.normalizeToken(event.city)
+        let stateKey = ExternalEventSupport.normalizeStateToken(event.state)
+        let postalKey = normalizedPostalCode(event.postalCode)
+        return !postalKey.isEmpty || (!cityKey.isEmpty && !stateKey.isEmpty)
     }
 
     nonisolated private static func repairedGoogleReviewSnapshot(
@@ -905,6 +942,16 @@ actor SupabaseEventFeedCacheService {
             return String(digits.prefix(5))
         }
         return digits
+    }
+
+    nonisolated private static func reviewRepairCoordinateRadius(
+        for searchLocation: ExternalEventSearchLocation
+    ) -> Double {
+        isHighDensityMetro(searchLocation) ? 0.35 : 0.2
+    }
+
+    nonisolated private static func coordinateString(_ value: Double) -> String {
+        String(format: "%.4f", value)
     }
 
     nonisolated private static func dateValue(from rawValue: Any?) -> Date? {
