@@ -414,40 +414,59 @@ enum ExternalEventSupport {
     }
 
     static func sanitizedGoogleReviewIdentity(_ event: ExternalEvent) -> ExternalEvent {
-        guard var payload = payloadDictionary(from: event.rawSourcePayload),
-              let reviewURL = firstPayloadString(
-                payload,
-                keys: ["google_places_url", "google_maps_uri", "google_places_google_maps_uri"]
-              ),
-              googleReviewURLNeedsIdentityValidation(reviewURL),
-              !googleReviewURLMatchesIdentity(
-                reviewURL,
-                venueNames: [event.venueName, event.title],
-                addressLine1: event.addressLine1,
-                city: event.city,
-                state: event.state,
-                postalCode: event.postalCode
-              )
-        else {
+        guard var payload = payloadDictionary(from: event.rawSourcePayload) else {
             return event
         }
 
         var sanitized = event
+        let invalidRatingKeys = googleReviewRatingKeys.filter { isJSONBoolean(payload[$0]) }
+        let invalidReviewCountKeys = googleReviewReviewCountKeys.filter { isJSONBoolean(payload[$0]) }
+
+        if !invalidRatingKeys.isEmpty || !invalidReviewCountKeys.isEmpty {
+            invalidRatingKeys.forEach { payload.removeValue(forKey: $0) }
+            invalidReviewCountKeys.forEach { payload.removeValue(forKey: $0) }
+
+            if !invalidRatingKeys.isEmpty,
+               let currentRating = sanitized.venueRating,
+               abs(currentRating - 1.0) < 0.05 {
+                sanitized.venueRating = nil
+            }
+
+            if !invalidReviewCountKeys.isEmpty,
+               let currentReviewCount = sanitized.venuePopularityCount,
+               currentReviewCount == 1 {
+                sanitized.venuePopularityCount = nil
+            }
+
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+               let rawPayload = String(data: data, encoding: .utf8) {
+                sanitized.rawSourcePayload = rawPayload
+            }
+        }
+
+        guard let reviewURL = firstPayloadString(
+            payload,
+            keys: ["google_places_url", "google_maps_uri", "google_places_google_maps_uri"]
+        ),
+        googleReviewURLNeedsIdentityValidation(reviewURL),
+        !googleReviewURLMatchesIdentity(
+            reviewURL,
+            venueNames: [sanitized.venueName, sanitized.title],
+            addressLine1: sanitized.addressLine1,
+            city: sanitized.city,
+            state: sanitized.state,
+            postalCode: sanitized.postalCode
+        ) else {
+            return sanitized
+        }
+
         let removedRating = firstPayloadDouble(
             payload,
-            keys: ["google_places_rating", "google_rating", "venue_rating", "rating"]
+            keys: googleReviewRatingKeys
         )
         let removedReviewCount = firstPayloadInt(
             payload,
-            keys: [
-                "google_places_user_rating_count",
-                "google_places_userRatingCount",
-                "userRatingCount",
-                "ratingCount",
-                "review_count",
-                "reviewCount",
-                "reviews"
-            ]
+            keys: googleReviewReviewCountKeys
         )
 
         [
@@ -478,6 +497,33 @@ enum ExternalEventSupport {
         }
 
         return sanitized
+    }
+
+    private static let googleReviewRatingKeys = [
+        "google_places_rating",
+        "google_rating",
+        "venue_rating",
+        "rating"
+    ]
+
+    private static let googleReviewReviewCountKeys = [
+        "google_places_user_rating_count",
+        "google_places_userRatingCount",
+        "userRatingCount",
+        "ratingCount",
+        "review_count",
+        "reviewCount",
+        "reviews"
+    ]
+
+    private static func isJSONBoolean(_ value: Any?) -> Bool {
+        if value is Bool {
+            return true
+        }
+        guard let number = value as? NSNumber else {
+            return false
+        }
+        return CFGetTypeID(number) == CFBooleanGetTypeID()
     }
 
     private static let googleReviewArticleTokens: Set<String> = [
@@ -1850,29 +1896,38 @@ enum ExternalEventSupport {
     }
 
     static func parseDouble(_ value: Any?) -> Double? {
-        switch value {
-        case let value as Double:
-            return value
-        case let value as Int:
-            return Double(value)
-        case let value as String:
-            return Double(value)
-        default:
+        if isJSONBoolean(value) {
             return nil
         }
+
+        if let number = value as? NSNumber {
+            let doubleValue = number.doubleValue
+            return doubleValue.isFinite ? doubleValue : nil
+        }
+
+        if let value = value as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Double(trimmed)
+        }
+
+        return nil
     }
 
     static func parseInt(_ value: Any?) -> Int? {
-        switch value {
-        case let value as Int:
-            return value
-        case let value as Double:
-            return Int(value)
-        case let value as String:
-            return Int(value)
-        default:
+        if isJSONBoolean(value) {
             return nil
         }
+
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+
+        if let value = value as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Int(trimmed)
+        }
+
+        return nil
     }
 
     static func googleEventsDateRange(
