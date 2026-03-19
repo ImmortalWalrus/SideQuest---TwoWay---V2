@@ -91,12 +91,14 @@ export async function startWorker(): Promise<void> {
       try {
         await processJob(config, supabase, job, metro);
         await completeJob(supabase, job.id, config.workerId);
+        trackJobCompleted();
         console.log(
           `[worker] Completed job ${job.id} (${metro.display_name} / ${job.intent})`
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[worker] Job ${job.id} failed: ${msg}`);
+        trackJobFailed();
         await failJob(supabase, job.id, config.workerId, msg);
       } finally {
         clearInterval(heartbeatInterval);
@@ -401,7 +403,56 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+let workerStartedAt: Date | null = null;
+let lastJobCompletedAt: Date | null = null;
+let totalJobsCompleted = 0;
+let totalJobsFailed = 0;
+
+function startHealthServer(port: number): void {
+  const http = require("http");
+  const server = http.createServer(
+    (
+      _req: { url?: string },
+      res: { writeHead: (s: number, h: Record<string, string>) => void; end: (b: string) => void }
+    ) => {
+      const uptimeMs = workerStartedAt
+        ? Date.now() - workerStartedAt.getTime()
+        : 0;
+      const body = JSON.stringify({
+        status: running ? "running" : "stopped",
+        uptime_ms: uptimeMs,
+        uptime_human: `${Math.floor(uptimeMs / 3600000)}h ${Math.floor((uptimeMs % 3600000) / 60000)}m`,
+        started_at: workerStartedAt?.toISOString() ?? null,
+        last_job_completed_at: lastJobCompletedAt?.toISOString() ?? null,
+        total_jobs_completed: totalJobsCompleted,
+        total_jobs_failed: totalJobsFailed,
+      });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(body);
+    }
+  );
+  server.listen(port, () => {
+    console.log(`[health] Listening on port ${port}`);
+  });
+}
+
+const originalCompleteJob = completeJob;
+const trackJobCompleted = () => {
+  lastJobCompletedAt = new Date();
+  totalJobsCompleted++;
+};
+const trackJobFailed = () => {
+  totalJobsFailed++;
+};
+
 if (require.main === module) {
+  workerStartedAt = new Date();
+
+  const healthPort = parseInt(process.env.HEALTH_PORT || "8080", 10);
+  startHealthServer(healthPort);
+
+  const origProcess = processJob;
+
   startWorker().catch((err) => {
     console.error("[worker] Fatal error:", err);
     process.exit(1);

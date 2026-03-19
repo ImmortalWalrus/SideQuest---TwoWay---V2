@@ -35,10 +35,11 @@ Backend-first event ingestion system. The iOS app is a **consumer** of prewarmed
 
 ### 1. SQL Migrations (`backend/migrations/`)
 
-Run `001_ingestion_tables.sql` against your Supabase project:
+Run all migrations against your Supabase project:
 
 ```bash
 psql $DATABASE_URL < backend/migrations/001_ingestion_tables.sql
+psql $DATABASE_URL < backend/migrations/002_add_review_poisoned_count.sql
 ```
 
 Tables created:
@@ -134,12 +135,47 @@ iOS continues to use `SUPABASE_URL` and `SUPABASE_ANON_KEY` for reading snapshot
 | 2 (mid) | 120-180 min | Dallas, Houston, Atlanta, SF, Seattle, Denver, Boston |
 | 3 (long-tail) | 240-360 min | Orlando, Tampa, Minneapolis, Charlotte, Detroit |
 
+## Deployment (24/7 Worker)
+
+The worker MUST be deployed as a long-running process. Options:
+
+### Railway (recommended)
+```bash
+cd backend/worker
+# Set env vars in Railway dashboard
+# Point to Dockerfile
+```
+
+### Fly.io
+```bash
+cd backend/worker
+fly launch --dockerfile Dockerfile
+fly secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... TICKETMASTER_API_KEY=...
+fly deploy
+```
+
+### Any VPS (DigitalOcean, Hetzner, etc.)
+```bash
+cd backend/worker
+npm install && npm run build
+# Use PM2 or systemd to keep alive
+pm2 start dist/ingestion-worker.js --name sidequest-worker
+```
+
+The worker exposes a health endpoint on `HEALTH_PORT` (default 8080):
+```bash
+curl http://localhost:8080/health
+# {"status":"running","uptime_ms":...,"total_jobs_completed":...}
+```
+
 ## Reliability Features
 
 - **Job queue with retries**: 3 retries with exponential backoff
 - **Heartbeat monitoring**: Stale jobs reclaimed after 5 min no heartbeat
 - **Poison data protection**: Boolean `true` ≠ 1.0 star rating
-- **Review validation**: Ratings must be 1.0–5.0, counts must be positive integers
+- **Review cross-validation**: HTML scrape rating cross-checked against Maps JSON; requires review count >= 5 for JSON-only signals
+- **Review count co-location**: Map JSON ratings only accepted when review count is found in the same data node
+- **Signal reconciliation**: When HTML and JSON scrapers disagree by > 0.3 stars, the source with higher review count wins
 - **Per-source metrics**: Track success/failure/timeout/latency per source per metro
 - **Coverage tracking**: Review hit rate, event counts by type, degradation reasons
 

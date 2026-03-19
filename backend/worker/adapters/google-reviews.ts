@@ -42,6 +42,8 @@ const NIGHTLIFE_BLOCK_SIGNALS = [
   "gentlemens club",
 ];
 
+const MIN_REVIEW_COUNT_FOR_JSON_TRUST = 5;
+
 export async function enrichEventsWithReviews(
   events: EventResult[],
   config: WorkerConfig,
@@ -262,6 +264,15 @@ function buildReviewLookup(event: EventResult): ReviewLookup | null {
 function buildGoogleReviewURLs(query: string): string[] {
   const urls: string[] = [];
 
+  const placeSearchParams = new URLSearchParams({
+    hl: "en",
+    gl: "us",
+    q: query + " reviews",
+  });
+  urls.push(
+    `https://www.google.com/search?${placeSearchParams.toString()}`
+  );
+
   const mapSearchParams = new URLSearchParams({
     tbm: "map",
     authuser: "0",
@@ -274,15 +285,6 @@ function buildGoogleReviewURLs(query: string): string[] {
   const encodedQuery = encodeURIComponent(query).replace(/%20/g, "+");
   urls.push(
     `https://www.google.com/maps/search/${encodedQuery}?hl=en&gl=us`
-  );
-
-  const placeSearchParams = new URLSearchParams({
-    hl: "en",
-    gl: "us",
-    q: query + " reviews",
-  });
-  urls.push(
-    `https://www.google.com/search?${placeSearchParams.toString()}`
   );
 
   return urls;
@@ -298,6 +300,9 @@ async function fetchReviewSignal(
 async function scrapeGoogleReviewSignal(
   lookup: ReviewLookup
 ): Promise<ReviewSignal | null> {
+  let htmlSignalResult: ReviewSignal | null = null;
+  let mapSignalResult: ReviewSignal | null = null;
+
   for (const reviewURL of lookup.reviewURLs) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -330,28 +335,82 @@ async function scrapeGoogleReviewSignal(
           continue;
         }
 
-        if (reviewURL.includes("tbm=map")) {
-          const mapSignal = parseGoogleMapSearchSignal(
-            html,
-            lookup,
-            reviewURL
-          );
-          if (mapSignal) return mapSignal;
+        if (!reviewURL.includes("tbm=map")) {
+          const sig = parseGoogleHTMLReviewSignal(html, lookup, reviewURL);
+          if (sig && (!htmlSignalResult || (sig.reviewCount ?? 0) > (htmlSignalResult.reviewCount ?? 0))) {
+            htmlSignalResult = sig;
+          }
         }
 
-        const htmlSignal = parseGoogleHTMLReviewSignal(
-          html,
-          lookup,
-          reviewURL
-        );
-        if (htmlSignal) return htmlSignal;
+        if (reviewURL.includes("tbm=map")) {
+          const sig = parseGoogleMapSearchSignal(html, lookup, reviewURL);
+          if (sig && (!mapSignalResult || (sig.reviewCount ?? 0) > (mapSignalResult.reviewCount ?? 0))) {
+            mapSignalResult = sig;
+          }
+          if (!sig) {
+            const fallbackHtml = parseGoogleHTMLReviewSignal(html, lookup, reviewURL);
+            if (fallbackHtml && (!htmlSignalResult || (fallbackHtml.reviewCount ?? 0) > (htmlSignalResult.reviewCount ?? 0))) {
+              htmlSignalResult = fallbackHtml;
+            }
+          }
+        }
+
+        if (htmlSignalResult && htmlSignalResult.reviewCount && htmlSignalResult.reviewCount >= MIN_REVIEW_COUNT_FOR_JSON_TRUST) {
+          break;
+        }
       } catch {
         continue;
       }
     }
+
+    if (htmlSignalResult && htmlSignalResult.reviewCount && htmlSignalResult.reviewCount >= MIN_REVIEW_COUNT_FOR_JSON_TRUST) {
+      break;
+    }
   }
 
-  return null;
+  return reconcileSignals(htmlSignalResult, mapSignalResult);
+}
+
+function reconcileSignals(
+  htmlSignal: ReviewSignal | null,
+  mapSignal: ReviewSignal | null
+): ReviewSignal | null {
+  if (!htmlSignal && !mapSignal) return null;
+
+  if (htmlSignal && !mapSignal) return htmlSignal;
+  if (mapSignal && !htmlSignal) {
+    if (mapSignal.reviewCount && mapSignal.reviewCount >= MIN_REVIEW_COUNT_FOR_JSON_TRUST) {
+      return mapSignal;
+    }
+    return null;
+  }
+
+  const html = htmlSignal!;
+  const map = mapSignal!;
+
+  if (Math.abs(html.rating - map.rating) <= 0.3) {
+    const bestURL = html.url.includes("/maps/place/") ? html.url
+      : map.url.includes("/maps/place/") ? map.url
+      : html.url;
+    return {
+      rating: html.rating,
+      reviewCount: Math.max(html.reviewCount ?? 0, map.reviewCount ?? 0) || null,
+      url: bestURL,
+      source: "scraped_google_maps",
+    };
+  }
+
+  const htmlHasCount = (html.reviewCount ?? 0) >= MIN_REVIEW_COUNT_FOR_JSON_TRUST;
+  const mapHasCount = (map.reviewCount ?? 0) >= MIN_REVIEW_COUNT_FOR_JSON_TRUST;
+
+  if (htmlHasCount && !mapHasCount) return html;
+  if (mapHasCount && !htmlHasCount) return map;
+
+  if (htmlHasCount && mapHasCount) {
+    return (html.reviewCount ?? 0) >= (map.reviewCount ?? 0) ? html : map;
+  }
+
+  return html;
 }
 
 function parseGoogleMapSearchSignal(
@@ -360,9 +419,8 @@ function parseGoogleMapSearchSignal(
   fallbackURL: string
 ): ReviewSignal | null {
   const trimmed = response.trimStart();
-  const sanitized = trimmed.substring(
-    trimmed.search(/[\[{]/) >= 0 ? trimmed.search(/[\[{]/) : 0
-  );
+  const jsonStart = trimmed.search(/[\[{]/);
+  const sanitized = jsonStart >= 0 ? trimmed.substring(jsonStart) : "";
   if (!sanitized) return null;
 
   let jsonObject: unknown;
@@ -417,9 +475,9 @@ function collectGoogleMapSearchCandidate(
   }) => void
 ): void {
   if (Array.isArray(node)) {
-    const rating = extractMapSearchRating(node);
-    if (rating !== null) {
-      const reviewCount = extractMapSearchReviewCount(node);
+    const ratingWithCount = extractMapSearchRatingWithCount(node);
+    if (ratingWithCount !== null) {
+      const { rating, reviewCount } = ratingWithCount;
       const reviewURL = extractMapSearchReviewURL(node, fallbackURL);
       const candidateStrings = extractMapSearchStrings(node, 2);
 
@@ -463,7 +521,9 @@ function collectGoogleMapSearchCandidate(
   }
 }
 
-function extractMapSearchRating(array: unknown[]): number | null {
+function extractMapSearchRatingWithCount(
+  array: unknown[]
+): { rating: number; reviewCount: number | null } | null {
   if (
     array.length >= 8 &&
     array.slice(0, 7).every((v) => v === null) &&
@@ -471,37 +531,46 @@ function extractMapSearchRating(array: unknown[]): number | null {
     array[7] >= 1.0 &&
     array[7] <= 5.0
   ) {
-    return array[7];
+    const rating = array[7];
+    const reviewCount = findNearbyReviewCount(array, 7);
+    if (reviewCount !== null && reviewCount >= MIN_REVIEW_COUNT_FOR_JSON_TRUST) {
+      return { rating, reviewCount };
+    }
+    if (hasRatingTextNearby(array)) {
+      return { rating, reviewCount };
+    }
+    return null;
   }
 
   if (
-    array.length >= 2 &&
+    array.length >= 3 &&
     typeof array[0] === "number" &&
     array[0] >= 1.0 &&
     array[0] <= 5.0 &&
-    (Array.isArray(array[1]) ||
-      (array.length >= 3 && typeof array[2] === "number"))
+    typeof array[2] === "number" &&
+    array[2] > 0 &&
+    Number.isInteger(array[2])
   ) {
-    return array[0];
-  }
-
-  for (const nullPrefixLen of [3, 4, 5, 6]) {
-    if (array.length <= nullPrefixLen) continue;
-    if (!array.slice(0, nullPrefixLen).every((v) => v === null)) continue;
-    const val = array[nullPrefixLen];
-    if (typeof val === "number" && val >= 1.0 && val <= 5.0) {
-      return val;
+    const rating = array[0];
+    const count = array[2] as number;
+    if (count >= MIN_REVIEW_COUNT_FOR_JSON_TRUST) {
+      return { rating, reviewCount: count };
     }
+    return null;
   }
 
   if (
     array.length >= 4 &&
     typeof array[0] === "string" &&
+    array[0].length <= 120 &&
     typeof array[1] === "number" &&
     array[1] >= 1.0 &&
-    array[1] <= 5.0
+    array[1] <= 5.0 &&
+    typeof array[3] === "number" &&
+    Number.isInteger(array[3]) &&
+    (array[3] as number) >= MIN_REVIEW_COUNT_FOR_JSON_TRUST
   ) {
-    return array[1];
+    return { rating: array[1], reviewCount: array[3] as number };
   }
 
   if (
@@ -510,63 +579,53 @@ function extractMapSearchRating(array: unknown[]): number | null {
     typeof array[1] === "number" &&
     array[1] >= 1.0 &&
     array[1] <= 5.0 &&
-    typeof array[2] === "number"
+    typeof array[2] === "number" &&
+    Number.isInteger(array[2]) &&
+    (array[2] as number) >= MIN_REVIEW_COUNT_FOR_JSON_TRUST
   ) {
-    return array[1];
+    return { rating: array[1], reviewCount: array[2] as number };
   }
 
   return null;
 }
 
-function extractMapSearchReviewCount(array: unknown[]): number | null {
-  if (
-    array.length >= 3 &&
-    typeof array[0] === "number" &&
-    array[0] >= 1.0 &&
-    array[0] <= 5.0 &&
-    typeof array[2] === "number" &&
-    array[2] > 0
-  ) {
-    return array[2] as number;
-  }
-
-  if (
-    array.length >= 4 &&
-    typeof array[0] === "string" &&
-    typeof array[1] === "number" &&
-    array[1] >= 1.0 &&
-    array[1] <= 5.0 &&
-    typeof array[3] === "number" &&
-    (array[3] as number) > 0
-  ) {
-    return array[3] as number;
-  }
-
-  if (
-    array.length >= 3 &&
-    array[0] === null &&
-    typeof array[1] === "number" &&
-    array[1] >= 1.0 &&
-    array[1] <= 5.0 &&
-    typeof array[2] === "number" &&
-    (array[2] as number) > 0
-  ) {
-    return array[2] as number;
-  }
-
-  for (let i = 0; i < Math.min(array.length, 10); i++) {
-    if (
-      typeof array[i] === "string" &&
-      (array[i] as string).toLowerCase().includes("review") &&
-      i > 0 &&
-      typeof array[i - 1] === "number" &&
-      (array[i - 1] as number) > 0
-    ) {
-      return array[i - 1] as number;
+function findNearbyReviewCount(array: unknown[], ratingIndex: number): number | null {
+  for (let i = ratingIndex + 1; i < Math.min(array.length, ratingIndex + 4); i++) {
+    if (typeof array[i] === "number" && Number.isInteger(array[i]) && (array[i] as number) > 0) {
+      return array[i] as number;
+    }
+    if (typeof array[i] === "string") {
+      const match = (array[i] as string).match(/^([\d,]+)\s*(?:review|rating)/i);
+      if (match) {
+        const parsed = parseInt(match[1].replace(/,/g, ""), 10);
+        if (parsed > 0) return parsed;
+      }
+    }
+    if (Array.isArray(array[i])) {
+      for (const nested of array[i] as unknown[]) {
+        if (typeof nested === "number" && Number.isInteger(nested) && (nested as number) >= MIN_REVIEW_COUNT_FOR_JSON_TRUST) {
+          return nested as number;
+        }
+      }
     }
   }
-
   return null;
+}
+
+function hasRatingTextNearby(array: unknown[]): boolean {
+  const strings = extractMapSearchStrings(array, 1);
+  for (const s of strings) {
+    const lower = s.toLowerCase();
+    if (
+      lower.includes("review") ||
+      lower.includes("rating") ||
+      lower.includes("stars") ||
+      /\d+\s*(?:review|rating)/i.test(lower)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function extractMapSearchReviewURL(
@@ -663,11 +722,11 @@ const REVIEW_COUNT_PATTERNS = [
   />([0-9][0-9,\.KkMm]*) reviews</,
   /([0-9][0-9,\.KkMm]*) Google reviews/,
   /aria-label="([0-9][0-9,\.KkMm]*) reviews"/,
-  /\(([0-9][0-9,\.KkMm]*)\)/,
   /class="(?:EBe2gf|UY7F9|RDApEe|jANrlb|F9iS2e|LJEGhe)[^"]*"[^>]*>([0-9][0-9,\.KkMm]*)</,
   />([0-9][0-9,\.KkMm]*) review/,
   /itemprop="reviewCount"[^>]*content="([0-9][0-9,\.KkMm]*)"/,
   /data-review-count="([0-9][0-9,\.KkMm]*)"/,
+  /\(([0-9][0-9,\.KkMm]*)\)/,
 ];
 
 const TITLE_PATTERNS = [
@@ -729,20 +788,29 @@ function parseGoogleHTMLReviewSignal(
     const titleScore = googleReviewIdentityScore(lookup, title, reviewURL);
     if (titleScore === 0) continue;
 
+    let reviewURLForSignal = sanitizedUserFacingReviewURL(reviewURL);
+
+    const placeURLMatch = window.match(/href="(https:\/\/(?:www\.)?google\.com\/maps\/place\/[^"]+)"/);
+    if (placeURLMatch?.[1]) {
+      reviewURLForSignal = placeURLMatch[1];
+    }
+
     const signal: ReviewSignal = {
       rating,
       reviewCount,
-      url: sanitizedUserFacingReviewURL(reviewURL),
+      url: reviewURLForSignal,
       source: "scraped_google_maps",
     };
 
+    const countBonus = reviewCount && reviewCount >= MIN_REVIEW_COUNT_FOR_JSON_TRUST ? 2 : 0;
+    const effectiveScore = titleScore + countBonus;
     const reviewCountVal = reviewCount ?? 0;
     if (
       !bestSignal ||
-      titleScore > bestSignal.score ||
-      (titleScore === bestSignal.score && reviewCountVal > bestSignal.reviewCount)
+      effectiveScore > bestSignal.score ||
+      (effectiveScore === bestSignal.score && reviewCountVal > bestSignal.reviewCount)
     ) {
-      bestSignal = { signal, score: titleScore, reviewCount: reviewCountVal };
+      bestSignal = { signal, score: effectiveScore, reviewCount: reviewCountVal };
     }
   }
 
@@ -939,13 +1007,12 @@ function venueIdentityScore(
     return 0;
   }
 
-  const coverage = sharedTokens.size / expectedTokens.size;
-
   const allExpectedInCandidate = [...expectedTokens].every((t) =>
     candidateTokens.has(t)
   );
 
   if (!allExpectedInCandidate) {
+    const coverage = sharedTokens.size / expectedTokens.size;
     if (coverage >= 0.75 && expectedTokens.size >= 2) {
       if (addressMatch) return 8;
       if (localityMatch) return 6;
@@ -1066,5 +1133,3 @@ function googleReviewURLContext(
 
   return { primaryName, context: normalizedFragments.join(" ") };
 }
-
-

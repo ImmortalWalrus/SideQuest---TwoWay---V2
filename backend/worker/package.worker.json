@@ -1,0 +1,23 @@
+{
+  "name": "sidequest-ingestion-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx tsx --watch ingestion-worker.ts",
+    "build": "npx tsc --outDir dist",
+    "start": "node dist/ingestion-worker.js",
+    "health": "node -e \"fetch('http://localhost:' + (process.env.HEALTH_PORT || 8080) + '/health').then(r => r.json()).then(console.log).catch(() => process.exit(1))\""
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "@types/node": "^20.10.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

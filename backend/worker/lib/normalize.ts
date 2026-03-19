@@ -101,14 +101,17 @@ function jaccardSimilarity(a: string[], b: string[]): number {
 
 export function sanitizeReviewRating(value: unknown): number | null {
   if (value === true || value === false) return null;
+  if (value === null || value === undefined) return null;
   if (typeof value === "string") {
     if (value === "true" || value === "false") return null;
-    const parsed = parseFloat(value);
-    if (isNaN(parsed)) return null;
+    const trimmed = value.trim();
+    if (trimmed === "" || trimmed === "0") return null;
+    const parsed = parseFloat(trimmed);
+    if (isNaN(parsed) || !isFinite(parsed)) return null;
     return parsed >= 1.0 && parsed <= 5.0 ? parsed : null;
   }
   if (typeof value === "number") {
-    if (value === 1 && !Number.isFinite(value)) return null;
+    if (!isFinite(value)) return null;
     return value >= 1.0 && value <= 5.0 ? value : null;
   }
   return null;
