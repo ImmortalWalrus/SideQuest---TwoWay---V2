@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import app from "./hono";
-import { startSimpleWorker, stopSimpleWorker } from "./worker/simple-worker";
+import { startWorker, stopWorker } from "./worker/ingestion-worker";
 
 const port = parseInt(process.env.PORT || "8080", 10);
 const apiOnly = process.argv.includes("--api-only");
@@ -18,7 +18,7 @@ async function bootWorker(): Promise<void> {
   if (apiOnly || workerStarted) return;
   workerStarted = true;
   try {
-    await startSimpleWorker();
+    await startWorker();
   } catch (error) {
     console.error("[server] Worker exited fatally:", error);
     process.exit(1);
@@ -29,7 +29,7 @@ void bootWorker();
 
 function shutdown(signal: string): void {
   console.log(`[server] ${signal} received, shutting down...`);
-  stopSimpleWorker();
+  stopWorker();
   server.close(() => {
     process.exit(0);
   });
