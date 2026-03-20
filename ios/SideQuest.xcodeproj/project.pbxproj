@@ -6,27 +6,8 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXContainerItemProxy section */
-		105FC58A2E9EAD3200EA8BCF /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 105FC5722E9EAD3100EA8BCF /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 105FC5792E9EAD3100EA8BCF;
-			remoteInfo = SideQuest;
-		};
-		105FC5942E9EAD3200EA8BCF /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 105FC5722E9EAD3100EA8BCF /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 105FC5792E9EAD3100EA8BCF;
-			remoteInfo = SideQuest;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXFileReference section */
 		105FC57A2E9EAD3100EA8BCF /* SideQuest.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SideQuest.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		105FC5892E9EAD3200EA8BCF /* SideQuestTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SideQuestTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		105FC5932E9EAD3200EA8BCF /* SideQuestUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SideQuestUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -35,34 +16,10 @@
 			path = SideQuest;
 			sourceTree = "<group>";
 		};
-		105FC58C2E9EAD3200EA8BCF /* SideQuestTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SideQuestTests;
-			sourceTree = "<group>";
-		};
-		105FC5962E9EAD3200EA8BCF /* SideQuestUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SideQuestUITests;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		105FC5772E9EAD3100EA8BCF /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		105FC5862E9EAD3200EA8BCF /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		105FC5902E9EAD3200EA8BCF /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -76,8 +33,6 @@
 			isa = PBXGroup;
 			children = (
 				105FC57C2E9EAD3100EA8BCF /* SideQuest */,
-				105FC58C2E9EAD3200EA8BCF /* SideQuestTests */,
-				105FC5962E9EAD3200EA8BCF /* SideQuestUITests */,
 				105FC57B2E9EAD3100EA8BCF /* Products */,
 			);
 			sourceTree = "<group>";
@@ -86,8 +41,6 @@
 			isa = PBXGroup;
 			children = (
 				105FC57A2E9EAD3100EA8BCF /* SideQuest.app */,
-				105FC5892E9EAD3200EA8BCF /* SideQuestTests.xctest */,
-				105FC5932E9EAD3200EA8BCF /* SideQuestUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -117,52 +70,6 @@
 			productReference = 105FC57A2E9EAD3100EA8BCF /* SideQuest.app */;
 			productType = "com.apple.product-type.application";
 		};
-		105FC5882E9EAD3200EA8BCF /* SideQuestTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 105FC5A02E9EAD3200EA8BCF /* Build configuration list for PBXNativeTarget "SideQuestTests" */;
-			buildPhases = (
-				105FC5852E9EAD3200EA8BCF /* Sources */,
-				105FC5862E9EAD3200EA8BCF /* Frameworks */,
-				105FC5872E9EAD3200EA8BCF /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				105FC58B2E9EAD3200EA8BCF /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				105FC58C2E9EAD3200EA8BCF /* SideQuestTests */,
-			);
-			name = SideQuestTests;
-			packageProductDependencies = (
-			);
-			productName = SideQuestTests;
-			productReference = 105FC5892E9EAD3200EA8BCF /* SideQuestTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		105FC5922E9EAD3200EA8BCF /* SideQuestUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 105FC5A32E9EAD3200EA8BCF /* Build configuration list for PBXNativeTarget "SideQuestUITests" */;
-			buildPhases = (
-				105FC58F2E9EAD3200EA8BCF /* Sources */,
-				105FC5902E9EAD3200EA8BCF /* Frameworks */,
-				105FC5912E9EAD3200EA8BCF /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				105FC5952E9EAD3200EA8BCF /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				105FC5962E9EAD3200EA8BCF /* SideQuestUITests */,
-			);
-			name = SideQuestUITests;
-			packageProductDependencies = (
-			);
-			productName = SideQuestUITests;
-			productReference = 105FC5932E9EAD3200EA8BCF /* SideQuestUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -170,19 +77,11 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2600;
-				LastUpgradeCheck = 2600;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					105FC5792E9EAD3100EA8BCF = {
-						CreatedOnToolsVersion = 26.0;
-					};
-					105FC5882E9EAD3200EA8BCF = {
-						CreatedOnToolsVersion = 26.0;
-						TestTargetID = 105FC5792E9EAD3100EA8BCF;
-					};
-					105FC5922E9EAD3200EA8BCF = {
-						CreatedOnToolsVersion = 26.0;
-						TestTargetID = 105FC5792E9EAD3100EA8BCF;
+						CreatedOnToolsVersion = 16.0;
 					};
 				};
 			};
@@ -201,28 +100,12 @@
 			projectRoot = "";
 			targets = (
 				105FC5792E9EAD3100EA8BCF /* SideQuest */,
-				105FC5882E9EAD3200EA8BCF /* SideQuestTests */,
-				105FC5922E9EAD3200EA8BCF /* SideQuestUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		105FC5782E9EAD3100EA8BCF /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		105FC5872E9EAD3200EA8BCF /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		105FC5912E9EAD3200EA8BCF /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -239,34 +122,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		105FC5852E9EAD3200EA8BCF /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		105FC58F2E9EAD3200EA8BCF /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		105FC58B2E9EAD3200EA8BCF /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 105FC5792E9EAD3100EA8BCF /* SideQuest */;
-			targetProxy = 105FC58A2E9EAD3200EA8BCF /* PBXContainerItemProxy */;
-		};
-		105FC5952E9EAD3200EA8BCF /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 105FC5792E9EAD3100EA8BCF /* SideQuest */;
-			targetProxy = 105FC5942E9EAD3200EA8BCF /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		105FC59B2E9EAD3200EA8BCF /* Debug */ = {
@@ -304,7 +160,6 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -368,7 +223,6 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -398,7 +252,7 @@
 				CODE_SIGN_ENTITLEMENTS = SideQuest/SideQuest.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_ASSET_PATHS = "\"SideQuest/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -420,7 +274,6 @@
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.rork.vm8hjqhguaayzwodzokx8;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 5.0;
@@ -437,7 +290,7 @@
 				CODE_SIGN_ENTITLEMENTS = SideQuest/SideQuest.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_ASSET_PATHS = "\"SideQuest/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -459,96 +312,11 @@
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.rork.vm8hjqhguaayzwodzokx8;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 5.0;
 				OTHER_SWIFT_FLAGS = "-suppress-warnings";
 				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		105FC5A12E9EAD3200EA8BCF /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.vm8hjqhguaayzwodzokx8.tests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SideQuest.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SideQuest";
-			};
-			name = Debug;
-		};
-		105FC5A22E9EAD3200EA8BCF /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.vm8hjqhguaayzwodzokx8.tests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SideQuest.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SideQuest";
-			};
-			name = Release;
-		};
-		105FC5A42E9EAD3200EA8BCF /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.vm8hjqhguaayzwodzokx8.uitests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = SideQuest;
-			};
-			name = Debug;
-		};
-		105FC5A52E9EAD3200EA8BCF /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.vm8hjqhguaayzwodzokx8.uitests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = SideQuest;
 			};
 			name = Release;
 		};
@@ -569,24 +337,6 @@
 			buildConfigurations = (
 				105FC59E2E9EAD3200EA8BCF /* Debug */,
 				105FC59F2E9EAD3200EA8BCF /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		105FC5A02E9EAD3200EA8BCF /* Build configuration list for PBXNativeTarget "SideQuestTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				105FC5A12E9EAD3200EA8BCF /* Debug */,
-				105FC5A22E9EAD3200EA8BCF /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		105FC5A32E9EAD3200EA8BCF /* Build configuration list for PBXNativeTarget "SideQuestUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				105FC5A42E9EAD3200EA8BCF /* Debug */,
-				105FC5A52E9EAD3200EA8BCF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
