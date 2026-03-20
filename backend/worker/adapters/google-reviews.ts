@@ -503,40 +503,22 @@ function collectGoogleMapSearchCandidate(
   }) => void
 ): void {
   if (Array.isArray(node)) {
-    const ratingWithCount = extractMapSearchRatingWithCount(node);
-    if (ratingWithCount !== null) {
-      const { rating, reviewCount } = ratingWithCount;
-      const reviewURL = extractMapSearchReviewURL(node, fallbackURL);
-      const candidateStrings = extractMapSearchStrings(node, 2);
+    const directCandidate = buildGoogleMapSearchCandidate(
+      node,
+      lookup,
+      fallbackURL
+    );
+    if (directCandidate) {
+      onCandidate(directCandidate);
+    }
 
-      const normalizedVenueName = normalizeToken(lookup.venueName);
-      let bestScore = 0;
-
-      for (const candidateTitle of candidateStrings) {
-        if (candidateTitle.length > 180) continue;
-        const score = googleReviewIdentityScore(
-          lookup,
-          candidateTitle,
-          reviewURL
-        );
-        if (score === 0) continue;
-
-        const normalizedCandidate = normalizeToken(candidateTitle);
-        const exactBonus =
-          normalizedCandidate === normalizedVenueName ? 4 : 0;
-        const partialBonus =
-          exactBonus === 0 &&
-          normalizedVenueName &&
-          (normalizedCandidate.includes(normalizedVenueName) ||
-            normalizedVenueName.includes(normalizedCandidate))
-            ? 1
-            : 0;
-        bestScore = Math.max(bestScore, score + exactBonus + partialBonus);
-      }
-
-      if (bestScore > 0) {
-        onCandidate({ rating, reviewCount, reviewURL, score: bestScore });
-      }
+    const placeCardCandidate = buildGoogleMapSearchPlaceCardCandidate(
+      node,
+      lookup,
+      fallbackURL
+    );
+    if (placeCardCandidate) {
+      onCandidate(placeCardCandidate);
     }
 
     for (const child of node) {
@@ -547,6 +529,102 @@ function collectGoogleMapSearchCandidate(
       collectGoogleMapSearchCandidate(value, lookup, fallbackURL, onCandidate);
     }
   }
+}
+
+function buildGoogleMapSearchCandidate(
+  array: unknown[],
+  lookup: ReviewLookup,
+  fallbackURL: string
+): {
+  rating: number;
+  reviewCount: number | null;
+  reviewURL: string;
+  score: number;
+} | null {
+  const ratingWithCount = extractMapSearchRatingWithCount(array);
+  if (ratingWithCount === null) return null;
+
+  const { rating, reviewCount } = ratingWithCount;
+  const reviewURL = extractMapSearchReviewURL(array, fallbackURL);
+  const candidateStrings = extractMapSearchStrings(array, 2);
+  const bestScore = bestGoogleMapCandidateScore(
+    lookup,
+    candidateStrings,
+    reviewURL
+  );
+
+  if (bestScore === 0) return null;
+  return { rating, reviewCount, reviewURL, score: bestScore };
+}
+
+function buildGoogleMapSearchPlaceCardCandidate(
+  array: unknown[],
+  lookup: ReviewLookup,
+  fallbackURL: string
+): {
+  rating: number;
+  reviewCount: number | null;
+  reviewURL: string;
+  score: number;
+} | null {
+  const title = typeof array[11] === "string" ? array[11] : null;
+  const ratingNode = Array.isArray(array[4]) ? array[4] : null;
+  const ratingWithCount = ratingNode
+    ? extractMapSearchRatingWithCount(ratingNode)
+    : null;
+  const rating =
+    ratingWithCount?.rating ??
+    (ratingNode ? extractLooseMapSearchRating(ratingNode) : null);
+
+  if (!title || rating === null) return null;
+
+  const reviewCount = ratingWithCount?.reviewCount ?? null;
+  const reviewURL = extractMapSearchPlaceCardReviewURL(array, fallbackURL);
+  const candidateStrings = [
+    title,
+    typeof array[18] === "string" ? array[18] : null,
+    ...(Array.isArray(array[13])
+      ? array[13].filter((value): value is string => typeof value === "string")
+      : []),
+  ].filter((value): value is string => typeof value === "string");
+
+  const bestScore = bestGoogleMapCandidateScore(
+    lookup,
+    candidateStrings,
+    reviewURL
+  );
+
+  if (bestScore === 0) return null;
+  return { rating, reviewCount, reviewURL, score: bestScore };
+}
+
+function bestGoogleMapCandidateScore(
+  lookup: ReviewLookup,
+  candidateStrings: string[],
+  reviewURL: string
+): number {
+  const normalizedVenueName = normalizeToken(lookup.venueName);
+  let bestScore = 0;
+
+  for (const candidateTitle of candidateStrings) {
+    if (candidateTitle.length > 180) continue;
+
+    const score = googleReviewIdentityScore(lookup, candidateTitle, reviewURL);
+    if (score === 0) continue;
+
+    const normalizedCandidate = normalizeToken(candidateTitle);
+    const exactBonus = normalizedCandidate === normalizedVenueName ? 4 : 0;
+    const partialBonus =
+      exactBonus === 0 &&
+      normalizedVenueName &&
+      (normalizedCandidate.includes(normalizedVenueName) ||
+        normalizedVenueName.includes(normalizedCandidate))
+        ? 1
+        : 0;
+    bestScore = Math.max(bestScore, score + exactBonus + partialBonus);
+  }
+
+  return bestScore;
 }
 
 function extractMapSearchRatingWithCount(
@@ -614,6 +692,51 @@ function extractMapSearchRatingWithCount(
   return null;
 }
 
+function extractLooseMapSearchRating(array: unknown[]): number | null {
+  if (
+    array.length >= 8 &&
+    array.slice(0, 7).every((v) => v === null) &&
+    typeof array[7] === "number" &&
+    array[7] >= 1.0 &&
+    array[7] <= 5.0
+  ) {
+    return array[7];
+  }
+
+  if (
+    array.length >= 3 &&
+    typeof array[0] === "number" &&
+    array[0] >= 1.0 &&
+    array[0] <= 5.0 &&
+    (Array.isArray(array[1]) || (typeof array[2] === "number" && array[2] > 0))
+  ) {
+    return array[0];
+  }
+
+  if (
+    array.length >= 4 &&
+    typeof array[0] === "string" &&
+    array[0].length <= 120 &&
+    typeof array[1] === "number" &&
+    array[1] >= 1.0 &&
+    array[1] <= 5.0
+  ) {
+    return array[1];
+  }
+
+  if (
+    array.length >= 3 &&
+    array[0] === null &&
+    typeof array[1] === "number" &&
+    array[1] >= 1.0 &&
+    array[1] <= 5.0
+  ) {
+    return array[1];
+  }
+
+  return null;
+}
+
 function findNearbyReviewCount(array: unknown[], ratingIndex: number): number | null {
   for (let i = ratingIndex + 1; i < Math.min(array.length, ratingIndex + 4); i++) {
     if (typeof array[i] === "number" && Number.isInteger(array[i]) && (array[i] as number) > 0) {
@@ -637,22 +760,6 @@ function findNearbyReviewCount(array: unknown[], ratingIndex: number): number | 
   return null;
 }
 
-function hasRatingTextNearby(array: unknown[]): boolean {
-  const strings = extractMapSearchStrings(array, 1);
-  for (const s of strings) {
-    const lower = s.toLowerCase();
-    if (
-      lower.includes("review") ||
-      lower.includes("rating") ||
-      lower.includes("stars") ||
-      /\d+\s*(?:review|rating)/i.test(lower)
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function extractMapSearchReviewURL(
   array: unknown[],
   fallbackURL: string
@@ -673,13 +780,23 @@ function extractMapSearchReviewURL(
       candidate.startsWith("https://www.google.com/maps")
     ) {
       const lower = candidate.toLowerCase();
-      if (!lower.includes("tbm=map") && !lower.includes("/preview/")) {
+      if (!lower.includes("tbm=map")) {
         const abs = absoluteGoogleURL(candidate);
-        if (abs) return abs;
+        if (abs) return sanitizedUserFacingReviewURL(abs);
       }
     }
   }
   return sanitizedUserFacingReviewURL(fallbackURL);
+}
+
+function extractMapSearchPlaceCardReviewURL(
+  array: unknown[],
+  fallbackURL: string
+): string {
+  if (typeof array[42] === "string") {
+    return sanitizedUserFacingReviewURL(array[42]);
+  }
+  return extractMapSearchReviewURL(array, fallbackURL);
 }
 
 function extractMapSearchStrings(
@@ -712,6 +829,19 @@ function absoluteGoogleURL(raw: string): string | null {
 
 function sanitizedUserFacingReviewURL(urlString: string): string {
   const lower = urlString.toLowerCase();
+  if (lower.includes("/maps/preview/place/")) {
+    try {
+      const url = new URL(urlString);
+      const match = url.pathname.match(/\/maps\/preview\/place\/([^/]+)/i);
+      if (match?.[1]) {
+        const query = decodeURIComponent(match[1].replace(/\+/g, " "));
+        const mapURL = new URL("https://www.google.com/maps/search/");
+        mapURL.searchParams.set("api", "1");
+        mapURL.searchParams.set("query", query);
+        return mapURL.toString();
+      }
+    } catch {}
+  }
   if (
     lower.includes("tbm=map") ||
     lower.includes("/maps/preview/") ||
@@ -1078,6 +1208,11 @@ function venueIdentityScore(
     if (localityMatch) return 7;
     return 5;
   }
+  const prefixedCandidate =
+    normalizedCandidate === normalizedExpected ||
+    normalizedCandidate.startsWith(`${normalizedExpected} `);
+  if (prefixedCandidate && addressMatch) return 10;
+  if (prefixedCandidate && localityMatch) return 7;
   if (extras.size <= 2) {
     if (addressMatch) return 8;
     if (localityMatch) return 5;

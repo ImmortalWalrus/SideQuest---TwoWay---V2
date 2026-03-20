@@ -1,0 +1,21 @@
+{
+  "name": "sidequest-backend",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "tsx watch server.ts",
+    "start": "tsx server.ts",
+    "worker": "tsx worker/ingestion-worker.ts",
+    "api": "tsx server.ts --api-only"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@supabase/supabase-js": "^2.49.8",
+    "hono": "^4.8.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
