@@ -392,7 +392,10 @@ function reconcileSignals(
     return null;
   }
   if (mapSignal && !htmlSignal) {
-    if (mapSignal.reviewCount && mapSignal.reviewCount >= MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST) {
+    if (
+      mapSignal.reviewCount === null ||
+      mapSignal.reviewCount >= MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST
+    ) {
       return mapSignal;
     }
     return null;
@@ -406,7 +409,12 @@ function reconcileSignals(
 
   if (Math.abs(html.rating - map.rating) <= 0.3) {
     const bestCount = Math.max(htmlCount, mapCount);
-    if (bestCount < MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST) return null;
+    if (bestCount < MIN_REVIEW_COUNT_FOR_AGGREGATE_TRUST) {
+      if (map.reviewCount === null) {
+        return map;
+      }
+      return null;
+    }
     const bestURL = html.url.includes("/maps/place/") ? html.url
       : map.url.includes("/maps/place/") ? map.url
       : html.url;
